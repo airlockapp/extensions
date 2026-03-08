@@ -147,7 +147,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // ── Initialization ─────────────────────────────────────────
     const init = async () => {
-        endpoint = await resolveEndpoint(out);
+        endpoint = await resolveEndpoint(out, context.extension.packageJSON.name);
 
         if (endpoint) {
             out.appendLine(`[Airlock] Endpoint: ${endpoint.url} (${endpoint.source})`);
@@ -412,7 +412,7 @@ export function activate(context: vscode.ExtensionContext) {
             } else {
                 await vscode.workspace.getConfiguration("airlock")
                     .update("approvalEndpoint", undefined, vscode.ConfigurationTarget.Global);
-                endpoint = await resolveEndpoint(out);
+                endpoint = await resolveEndpoint(out, context.extension.packageJSON.name);
                 updateToggleStatusBar(toggleItem, endpoint ? "connected" : "no-endpoint");
             }
         })

@@ -2,6 +2,9 @@ import * as vscode from "vscode";
 import * as http from "http";
 import * as https from "https";
 
+/** Default gateway for release/prod builds when no local gateway, setting, or env is set */
+export const DEFAULT_RELEASE_GATEWAY = "https://gw.airlocks.io";
+
 /** Ports to probe — HTTPS Gateway first, then HTTP Gateway, then legacy HE daemon */
 const PROBE_URLS = [
     "https://localhost:7145/echo",
@@ -16,16 +19,18 @@ const PROBE_URLS = [
 
 export interface EndpointInfo {
     url: string;
-    source: "daemon" | "setting" | "env";
+    source: "daemon" | "setting" | "env" | "default";
 }
 
 /**
  * Resolve the Airlock approval endpoint.
- * Priority: (1) Local Gateway/HE daemon probe, (2) VS Code setting, (3) Env vars.
- * Returns null if no endpoint is found.
+ * Priority: (1) Local Gateway/HE daemon probe, (2) VS Code setting, (3) Env vars,
+ * (4) for release/prod builds only, default to DEFAULT_RELEASE_GATEWAY.
+ * Returns null if no endpoint is found (dev builds only).
  */
 export async function resolveEndpoint(
-    out: vscode.OutputChannel
+    out: vscode.OutputChannel,
+    extensionName?: string
 ): Promise<EndpointInfo | null> {
     out.appendLine("\n[Airlock] Resolving approval endpoint...");
 
@@ -60,6 +65,12 @@ export async function resolveEndpoint(
     if (envUrl && envUrl.trim()) {
         out.appendLine(`  ✓ Using env var: ${envUrl}`);
         return { url: envUrl.trim(), source: "env" };
+    }
+
+    // (4) Release/prod default: use hosted gateway (dev builds have name ending with -dev)
+    if (extensionName && !extensionName.endsWith("-dev")) {
+        out.appendLine(`  ✓ Using release default: ${DEFAULT_RELEASE_GATEWAY}`);
+        return { url: DEFAULT_RELEASE_GATEWAY, source: "default" };
     }
 
     out.appendLine("  ⚠ No approval endpoint found.");
