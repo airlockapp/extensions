@@ -114,4 +114,4 @@ See the `DEVELOPMENT.md` file in each extension folder for extension-specific no
 
 ## License
 
-(To be defined)
+This project is licensed under the [MIT License](LICENSE).
