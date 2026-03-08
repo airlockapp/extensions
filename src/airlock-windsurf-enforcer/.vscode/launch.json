@@ -1,0 +1,33 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            // Open this folder in Windsurf itself and press F5.
+            // Windsurf will launch a second "Extension Development Host" window
+            // with the extension loaded from the current workspace folder.
+            "name": "Run Extension in Windsurf",
+            "type": "extensionHost",
+            "request": "launch",
+            "args": [
+                "--extensionDevelopmentPath=${workspaceFolder}"
+            ],
+            "outFiles": [
+                "${workspaceFolder}/out/**/*.js"
+            ],
+            "preLaunchTask": "${defaultBuildTask}"
+        },
+        {
+            // Alternative: attach to a running Windsurf instance.
+            // Start Windsurf with: windsurf --extensionDevelopmentPath=<path> --inspect-extensions=9229
+            // Then use this config to attach the debugger.
+            "name": "Attach to Windsurf Extension Host",
+            "type": "node",
+            "request": "attach",
+            "port": 9229,
+            "sourceMaps": true,
+            "outFiles": [
+                "${workspaceFolder}/out/**/*.js"
+            ]
+        }
+    ]
+}

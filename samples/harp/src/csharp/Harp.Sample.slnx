@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Harp.Approver/Harp.Approver.csproj" Id="32eb5ce4-0b80-4aa3-8674-58cd77116da1" />
+  <Project Path="Harp.Common/Harp.Common.csproj" Id="6dea059f-bdcb-4278-af28-f4a43374df29" />
+  <Project Path="Harp.Enforcer/Harp.Enforcer.csproj" Id="62080be0-dbbf-4262-8203-cb25314fb7f2" />
+  <Project Path="Harp.Executor/Harp.Executor.csproj" Id="f4148f22-8e33-426c-b9a1-58a87a8ef585" />
+</Solution>

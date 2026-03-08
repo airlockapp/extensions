@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harp-protocol.org/schemas/harp-gateway-ack-submit.schema.json",
+  "title": "Ack Submit Body",
+  "type": "object",
+  "required": [
+    "msgId",
+    "status",
+    "ackAt"
+  ],
+  "properties": {
+    "msgId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "received",
+        "processed"
+      ]
+    },
+    "ackAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,30 @@
+{
+    "_comment": "Pairing flow: initiate → resolve → complete",
+    "initiate_request": {
+        "enforcerId": "enf-01",
+        "enforcerLabel": "Antigravity",
+        "workspaceName": "airlock",
+        "publicKey": "BASE64URL_PUBLIC_KEY_PLACEHOLDER"
+    },
+    "initiate_response": {
+        "code": "A1B2C3",
+        "nonce": "nonce-xyz789",
+        "expiresAt": "2026-02-24T10:10:00Z"
+    },
+    "resolve_response": {
+        "nonce": "nonce-xyz789",
+        "enforcerLabel": "Antigravity",
+        "workspaceName": "airlock",
+        "publicKey": "BASE64URL_PUBLIC_KEY_PLACEHOLDER"
+    },
+    "complete_request": {
+        "nonce": "nonce-xyz789",
+        "approverId": "app-01",
+        "publicKey": "BASE64URL_APPROVER_PUBLIC_KEY_PLACEHOLDER"
+    },
+    "complete_response": {
+        "routingToken": "rt-opaque-abc123",
+        "enforcerLabel": "Antigravity",
+        "workspaceName": "airlock"
+    }
+}

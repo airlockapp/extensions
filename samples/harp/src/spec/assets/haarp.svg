@@ -1,0 +1,13 @@
+<svg width="400" height="150" viewBox="0 0 400 150" xmlns="http://www.w3.org/2000/svg">
+  <rect width="400" height="150" fill="none"/>
+  
+  <g transform="translate(30, 35)">
+    <rect x="0" y="0" width="18" height="80" rx="4" fill="#0A192F"/>
+    <rect x="52" y="0" width="18" height="80" rx="4" fill="#0A192F"/>
+    <rect x="15" y="32" width="40" height="16" fill="#00F2FF"/>
+    <circle cx="35" cy="40" r="10" fill="#0A192F" stroke="#00F2FF" stroke-width="3"/>
+  </g>
+  
+  <text x="120" y="85" font-family="Arial, sans-serif" font-weight="800" font-size="52" letter-spacing="4" fill="#0A192F">HARP</text>
+  <text x="122" y="110" font-family="Arial, sans-serif" font-weight="400" font-size="12" letter-spacing="2" fill="#64748B">HUMAN AUTHORIZATION PROTOCOL</text>
+</svg>

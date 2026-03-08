@@ -1,0 +1,10 @@
+{
+    "msgType": "hello",
+    "capabilities": {
+        "push": true,
+        "poll": false,
+        "sse": false
+    },
+    "workspaceName": "airlock",
+    "enforcerLabel": "Antigravity"
+}

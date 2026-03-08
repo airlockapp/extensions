@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harp-protocol.org/schemas/harp-gateway-artifact-submit.schema.json",
+  "title": "Artifact Submit Body",
+  "type": "object",
+  "required": [
+    "artifactType",
+    "artifactHash",
+    "ciphertext",
+    "expiresAt"
+  ],
+  "properties": {
+    "artifactType": {
+      "type": "string",
+      "minLength": 1
+    },
+    "artifactHash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ciphertext": {
+      "type": "object",
+      "required": [
+        "alg",
+        "data"
+      ],
+      "properties": {
+        "alg": {
+          "type": "string"
+        },
+        "data": {
+          "type": "string",
+          "description": "Base64 ciphertext blob or JWE-like compact form."
+        },
+        "nonce": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "aad": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

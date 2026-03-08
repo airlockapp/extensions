@@ -1,0 +1,143 @@
+{
+    "name": "airlock-windsurf-enforcer",
+    "displayName": "Airlock Windsurf Enforcer",
+    "description": "Airlock enforcement layer for Windsurf IDE — gates Cascade agent/terminal commands through mobile approval. Requires 'Auto Mode' or 'Turbo Mode' terminal auto-execution setting for full enforcement.",
+    "version": "0.1.0",
+    "publisher": "out-of-band-systems",
+    "icon": "images/icon.png",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/airlockapp/extensions"
+    },
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [
+        "onStartupFinished"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "airlock.toggleAutoMode",
+                "title": "Airlock: Toggle Auto Mode"
+            },
+            {
+                "command": "airlock.enableAutoMode",
+                "title": "Airlock: Enable Auto Mode"
+            },
+            {
+                "command": "airlock.disableAutoMode",
+                "title": "Airlock: Disable Auto Mode"
+            },
+            {
+                "command": "airlock.showStatus",
+                "title": "Airlock: Show Status"
+            },
+            {
+                "command": "airlock.configureEndpoint",
+                "title": "Airlock: Configure Endpoint"
+            },
+            {
+                "command": "airlock.startPairing",
+                "title": "Airlock: Start Mobile Pairing"
+            },
+            {
+                "command": "airlock.unpair",
+                "title": "Airlock: Unpair Mobile Approver"
+            },
+            {
+                "command": "airlock.setEnforcerId",
+                "title": "Airlock: Set Enforcer ID"
+            },
+            {
+                "command": "airlock.login",
+                "title": "Airlock: Sign In"
+            },
+            {
+                "command": "airlock.logout",
+                "title": "Airlock: Sign Out"
+            },
+            {
+                "command": "airlock.openSettings",
+                "title": "Airlock: Settings"
+            }
+        ],
+        "configuration": {
+            "title": "Airlock Windsurf Enforcer",
+            "properties": {
+                "airlock.diagnosticMode": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable verbose diagnostic logging. When enabled, detailed detection and IPC logs are written to the output channel. Default is off for production."
+                },
+                "airlock.autoApprovePatterns": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [],
+                    "description": "Commands matching any of these patterns are auto-approved without sending to the Gateway. Supports literal substrings and /regex/ patterns. Empty by default (all commands require approval)."
+                },
+                "airlock.approvalTimeoutSeconds": {
+                    "type": "number",
+                    "default": 60,
+                    "description": "Timeout in seconds for waiting for mobile approval."
+                },
+                "airlock.approvalEndpoint": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Airlock approval endpoint URL (e.g. http://127.0.0.1:7771). If empty, auto-discovery is used."
+                },
+                "airlock.hookPreWriteCode": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable the pre_write_code hook. When enabled, file write operations by the Cascade agent are sent for mobile approval. Disabled by default."
+                },
+                "airlock.hookPreReadCode": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable the pre_read_code hook. When enabled, file read operations by the Cascade agent are sent for mobile approval. Disabled by default."
+                },
+                "airlock.hookPreUserPrompt": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable the pre_user_prompt hook. When enabled, every prompt submission is sent for mobile approval. Note: Windsurf ignores show_output for this hook. Disabled by default."
+                },
+                "airlock.allowSelfSignedCerts": {
+                    "type": "boolean",
+                    "default": false,
+                    "scope": "application",
+                    "description": "Allow self-signed or untrusted TLS certificates when connecting to the Airlock Gateway. Enable only for local development. Default: false."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./ && node -e \"const fs=require('fs');fs.copyFileSync('src/hooksGateScript.js','out/hooksGateScript.js')\"",
+        "watch": "tsc -watch -p ./",
+        "pretest": "npm run compile && npm run lint",
+        "lint": "eslint src",
+        "test": "vscode-test"
+    },
+    "dependencies": {
+        "ws": "^8.18.0",
+        "qrcode": "^1.5.4"
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.85.0",
+        "@types/mocha": "^10.0.10",
+        "@types/node": "22.x",
+        "@types/ws": "^8.5.14",
+        "@types/qrcode": "^1.5.5",
+        "typescript-eslint": "^8.54.0",
+        "eslint": "^9.39.2",
+        "typescript": "^5.9.3",
+        "@vscode/test-cli": "^0.0.12",
+        "@vscode/test-electron": "^2.5.2"
+    }
+}

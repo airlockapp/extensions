@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harp-protocol.org/schemas/harp-session/session-snapshot.json",
+  "title": "HARP-SESSION session.snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sessionId",
+    "eventType",
+    "snapshotId",
+    "snapshotType",
+    "createdAt",
+    "snapshotHashAlg",
+    "snapshotHash",
+    "payload"
+  ],
+  "properties": {
+    "sessionId": {
+      "type": "string"
+    },
+    "eventType": {
+      "type": "string",
+      "const": "session.snapshot"
+    },
+    "snapshotId": {
+      "type": "string"
+    },
+    "snapshotType": {
+      "type": "string",
+      "enum": [
+        "summary",
+        "plan",
+        "diff_summary",
+        "context"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object"
+    },
+    "snapshotHashAlg": {
+      "type": "string",
+      "enum": [
+        "SHA-256"
+      ]
+    },
+    "snapshotHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "metadata": {
+      "type": "object"
+    }
+  }
+}

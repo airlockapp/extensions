@@ -1,0 +1,148 @@
+{
+    "name": "airlock-antigravity-enforcer",
+    "displayName": "Airlock Antigravity Enforcer",
+    "description": "Airlock enforcement layer for Antigravity — gates agent/terminal commands through mobile approval",
+    "version": "0.1.0",
+    "publisher": "out-of-band-systems",
+    "icon": "images/icon.png",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/airlockapp/extensions"
+    },
+    "engines": {
+        "vscode": "^1.107.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [
+        "onStartupFinished"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "airlock.toggleAutoMode",
+                "title": "Airlock: Toggle Auto Mode"
+            },
+            {
+                "command": "airlock.enableAutoMode",
+                "title": "Airlock: Enable Auto Mode"
+            },
+            {
+                "command": "airlock.disableAutoMode",
+                "title": "Airlock: Disable Auto Mode"
+            },
+            {
+                "command": "airlock.showStatus",
+                "title": "Airlock: Show Status"
+            },
+            {
+                "command": "airlock.configureEndpoint",
+                "title": "Airlock: Configure Endpoint"
+            },
+            {
+                "command": "airlock.relaunch",
+                "title": "Airlock: Relaunch with CDP"
+            },
+            {
+                "command": "airlock.startPairing",
+                "title": "Airlock: Start Mobile Pairing"
+            },
+            {
+                "command": "airlock.unpair",
+                "title": "Airlock: Unpair Mobile Approver"
+            },
+            {
+                "command": "airlock.setEnforcerId",
+                "title": "Airlock: Set Enforcer ID"
+            },
+            {
+                "command": "airlock.login",
+                "title": "Airlock: Sign In"
+            },
+            {
+                "command": "airlock.logout",
+                "title": "Airlock: Sign Out"
+            },
+            {
+                "command": "airlock.openSettings",
+                "title": "Airlock: Settings"
+            }
+        ],
+        "configuration": {
+            "title": "Airlock Antigravity Enforcer",
+            "properties": {
+                "airlock.diagnosticMode": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable verbose diagnostic logging. When enabled, detailed detection and IPC logs are written to the output channel. Default is off for production."
+                },
+                "airlock.allowSelfSignedCerts": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Allow self-signed TLS certificates when connecting to the Gateway. Enable only for local development with Aspire dev certs."
+                },
+                "airlock.pollInterval": {
+                    "type": "number",
+                    "default": 500,
+                    "minimum": 100,
+                    "maximum": 2000,
+                    "description": "Polling interval in milliseconds for CDP-based detection strategies."
+                },
+                "airlock.autoApprovePatterns": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [],
+                    "description": "Commands matching any of these patterns are auto-approved without sending to the Gateway. Supports literal substrings and /regex/ patterns. Empty by default (all commands require approval)."
+                },
+                "airlock.cdpPortStart": {
+                    "type": "number",
+                    "default": 9000,
+                    "description": "Start of CDP port scan range."
+                },
+                "airlock.cdpPortEnd": {
+                    "type": "number",
+                    "default": 9030,
+                    "description": "End of CDP port scan range."
+                },
+                "airlock.approvalTimeoutSeconds": {
+                    "type": "number",
+                    "default": 60,
+                    "description": "Timeout in seconds for waiting for mobile approval."
+                },
+                "airlock.approvalEndpoint": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Airlock approval endpoint URL (e.g. http://127.0.0.1:7771). If empty, auto-discovery is used."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./ && node -e \"require('fs').copyFileSync('src/cdpScript.js','out/cdpScript.js')\"",
+        "watch": "tsc -watch -p ./",
+        "pretest": "npm run compile && npm run lint",
+        "lint": "eslint src",
+        "test": "vscode-test"
+    },
+    "dependencies": {
+        "ws": "^8.18.0",
+        "qrcode": "^1.5.4"
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.107.0",
+        "@types/mocha": "^10.0.10",
+        "@types/node": "22.x",
+        "@types/ws": "^8.5.14",
+        "@types/qrcode": "^1.5.5",
+        "typescript-eslint": "^8.54.0",
+        "eslint": "^9.39.2",
+        "typescript": "^5.9.3",
+        "@vscode/test-cli": "^0.0.12",
+        "@vscode/test-electron": "^2.5.2"
+    }
+}

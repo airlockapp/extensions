@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harp-protocol.org/schemas/harp-session/session-status.json",
+  "title": "HARP-SESSION session.status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sessionId",
+    "eventType",
+    "state",
+    "updatedAt"
+  ],
+  "properties": {
+    "sessionId": {
+      "type": "string"
+    },
+    "eventType": {
+      "type": "string",
+      "const": "session.status"
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "idle",
+        "planning",
+        "editing",
+        "executing",
+        "waiting_approval",
+        "error"
+      ]
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "details": {
+      "type": "object"
+    }
+  }
+}

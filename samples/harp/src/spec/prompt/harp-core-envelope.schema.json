@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harp-protocol.org/schemas/harp-core/envelope.json",
+  "title": "HARP-CORE Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "envelopeId",
+    "msgType",
+    "sender",
+    "recipient",
+    "createdAt",
+    "body"
+  ],
+  "properties": {
+    "envelopeId": {
+      "type": "string"
+    },
+    "msgType": {
+      "type": "string",
+      "enum": [
+        "artifact.submit",
+        "decision.submit",
+        "error"
+      ]
+    },
+    "sender": {
+      "type": "object",
+      "required": [
+        "actor",
+        "deviceId"
+      ],
+      "properties": {
+        "actor": {
+          "type": "string",
+          "enum": [
+            "HE",
+            "MA",
+            "GW"
+          ]
+        },
+        "deviceId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "recipient": {
+      "type": "object",
+      "required": [
+        "actor",
+        "deviceId"
+      ],
+      "properties": {
+        "actor": {
+          "type": "string",
+          "enum": [
+            "HE",
+            "MA",
+            "GW"
+          ]
+        },
+        "deviceId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "body": {
+      "type": "object"
+    },
+    "trace": {
+      "type": "object"
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "npm",
+            "script": "watch",
+            "problemMatcher": "$tsc-watch",
+            "isBackground": true,
+            "presentation": {
+                "reveal": "never"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            // Run this task to build and package a fresh VSIX, then install it.
+            // Use this as the alternative to F5 if Windsurf does not support
+            // the extensionHost debugger type directly.
+            "label": "Package & Install VSIX",
+            "type": "shell",
+            "command": "npm run compile && npx @vscode/vsce package --allow-missing-repository --no-dependencies --no-git-tag-version 2>&1 | Select-String -NotMatch '^$' ; Write-Host 'Done — install the .vsix via Extensions > Install from VSIX'",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        }
+    ]
+}

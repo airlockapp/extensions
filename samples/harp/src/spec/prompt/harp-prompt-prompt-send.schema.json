@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harp-protocol.org/schemas/harp-prompt/prompt-send.json",
+  "title": "HARP-PROMPT prompt.send Artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "artifactType",
+    "createdAt",
+    "target",
+    "text",
+    "promptHashAlg",
+    "promptHash"
+  ],
+  "properties": {
+    "requestId": {
+      "type": "string",
+      "description": "Globally unique identifier (UUID or ULID)."
+    },
+    "sessionId": {
+      "type": "string",
+      "description": "Optional session identifier (UUID or ULID)."
+    },
+    "repoRef": {
+      "type": "string",
+      "description": "Optional opaque repository reference."
+    },
+    "artifactType": {
+      "type": "string",
+      "const": "prompt.send"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "target": {
+      "type": "string",
+      "enum": [
+        "agentChat",
+        "composer",
+        "tool",
+        "other"
+      ],
+      "description": "Prompt destination within the AI agent UX."
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Plaintext prompt prior to encryption."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional metadata (non-sensitive recommended). Included in hashing if present."
+    },
+    "promptHashAlg": {
+      "type": "string",
+      "enum": [
+        "SHA-256"
+      ]
+    },
+    "promptHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Hex SHA-256 over canonical PromptSignable (see spec)."
+    },
+    "extensions": {
+      "type": "object",
+      "description": "Optional extension fields under namespaced keys."
+    }
+  }
+}

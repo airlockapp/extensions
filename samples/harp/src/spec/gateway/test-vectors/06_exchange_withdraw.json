@@ -1,0 +1,13 @@
+{
+    "msgType": "exchange.withdrawn",
+    "requestId": "req-u6s2nku4oo",
+    "createdAt": "2026-02-24T10:03:00Z",
+    "sender": {
+        "gatewayId": "gw-01"
+    },
+    "body": {
+        "state": "Withdrawn",
+        "withdrawnAt": "2026-02-24T10:03:00Z",
+        "reason": "Enforcer-initiated withdrawal"
+    }
+}

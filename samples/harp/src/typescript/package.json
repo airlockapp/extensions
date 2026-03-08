@@ -1,0 +1,24 @@
+{
+    "name": "harp-typescript",
+    "version": "0.2.0",
+    "description": "HARP TypeScript Reference Implementation — Human Authorization & Review Protocol",
+    "type": "module",
+    "scripts": {
+        "approver": "tsx src/harp-approver.ts",
+        "executor": "tsx src/harp-executor.ts",
+        "enforcer": "tsx src/harp-enforcer.ts"
+    },
+    "dependencies": {
+        "canonicalize": "^2.0.0",
+        "libsodium-wrappers-sumo": "^0.7.15"
+    },
+    "devDependencies": {
+        "@types/libsodium-wrappers-sumo": "^0.7.8",
+        "@types/node": "^22.0.0",
+        "tsx": "^4.0.0",
+        "typescript": "^5.7.0"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    }
+}

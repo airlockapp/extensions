@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harp-protocol.org/schemas/harp-core/decision.json",
+  "title": "HARP-CORE Decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "artifactHashAlg",
+    "artifactHash",
+    "repoRef",
+    "decision",
+    "scope",
+    "expiresAt",
+    "nonce",
+    "sigAlg",
+    "signerKeyId",
+    "signature"
+  ],
+  "properties": {
+    "requestId": {
+      "type": "string"
+    },
+    "artifactHashAlg": {
+      "type": "string",
+      "enum": [
+        "SHA-256"
+      ]
+    },
+    "artifactHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "repoRef": {
+      "type": "string"
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "allow",
+        "deny"
+      ]
+    },
+    "scope": {
+      "type": "string",
+      "enum": [
+        "once",
+        "timebox",
+        "session"
+      ]
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "nonce": {
+      "type": "string",
+      "description": "Opaque nonce, base64url recommended."
+    },
+    "sigAlg": {
+      "type": "string",
+      "enum": [
+        "Ed25519"
+      ]
+    },
+    "signerKeyId": {
+      "type": "string",
+      "description": "Key identifier (KID)."
+    },
+    "signature": {
+      "type": "string",
+      "description": "Signature over canonical DecisionSignable (base64url)."
+    },
+    "policyHints": {
+      "type": "object",
+      "description": "Optional policy-related metadata included in signing input if present."
+    }
+  }
+}

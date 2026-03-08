@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harp-protocol.org/schemas/harp-prompt/prompt-ack.json",
+  "title": "HARP-PROMPT prompt.ack",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "promptHash",
+    "status",
+    "ackAt"
+  ],
+  "properties": {
+    "requestId": {
+      "type": "string"
+    },
+    "promptHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "delivered",
+        "rejected",
+        "expired",
+        "error"
+      ]
+    },
+    "ackAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "details": {
+      "type": "object"
+    }
+  }
+}

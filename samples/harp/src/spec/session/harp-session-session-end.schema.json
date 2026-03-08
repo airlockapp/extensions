@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harp-protocol.org/schemas/harp-session/session-end.json",
+  "title": "HARP-SESSION session.end",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sessionId",
+    "eventType",
+    "endedAt",
+    "reason"
+  ],
+  "properties": {
+    "sessionId": {
+      "type": "string"
+    },
+    "eventType": {
+      "type": "string",
+      "const": "session.end"
+    },
+    "endedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "user_end",
+        "timeout",
+        "policy_kill"
+      ]
+    },
+    "metadata": {
+      "type": "object"
+    }
+  }
+}

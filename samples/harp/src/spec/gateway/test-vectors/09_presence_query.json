@@ -1,0 +1,19 @@
+[
+    {
+        "enforcerDeviceId": "enf-01",
+        "status": "online",
+        "lastSeenAt": "2026-02-24T10:00:00Z",
+        "transport": "websocket",
+        "workspaceName": "airlock",
+        "enforcerLabel": "Antigravity",
+        "capabilities": {
+            "push": true
+        }
+    },
+    {
+        "enforcerDeviceId": "enf-02",
+        "status": "offline",
+        "lastSeenAt": "2026-02-24T09:45:00Z",
+        "transport": "poll"
+    }
+]

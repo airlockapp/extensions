@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harp-protocol.org/schemas/harp-gateway-exchange-status.schema.json",
+  "title": "Exchange Status Body",
+  "type": "object",
+  "required": [
+    "requestId",
+    "state",
+    "createdAt",
+    "expiresAt"
+  ],
+  "properties": {
+    "requestId": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "pendingApproval",
+        "decided",
+        "delivered",
+        "expired",
+        "withdrawn",
+        "cancelled"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "artifactHash": {
+      "type": "string"
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

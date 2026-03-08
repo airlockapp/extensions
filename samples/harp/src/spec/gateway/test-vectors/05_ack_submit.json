@@ -1,0 +1,13 @@
+{
+  "msgType": "ack.submit",
+  "requestId": "req-u6s2nku4oo",
+  "createdAt": "2026-02-24T10:01:02Z",
+  "sender": {
+    "enforcerId": "enf-01"
+  },
+  "body": {
+    "msgId": "msg-x589nr37xc",
+    "status": "processed",
+    "ackAt": "2026-02-24T10:01:02Z"
+  }
+}

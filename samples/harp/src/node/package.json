@@ -1,0 +1,18 @@
+{
+  "name": "harp-node",
+  "version": "0.2.0",
+  "description": "HARP Node.js Reference Implementation — Human Authorization & Review Protocol",
+  "type": "module",
+  "scripts": {
+    "approver": "node harp-approver.mjs",
+    "executor": "node harp-executor.mjs",
+    "enforcer": "node harp-enforcer.mjs"
+  },
+  "dependencies": {
+    "canonicalize": "^2.0.0",
+    "libsodium-wrappers-sumo": "^0.8.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

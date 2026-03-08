@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harp-protocol.org/schemas/harp-session/session-start.json",
+  "title": "HARP-SESSION session.start",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sessionId",
+    "eventType",
+    "createdAt",
+    "agentHost"
+  ],
+  "properties": {
+    "sessionId": {
+      "type": "string"
+    },
+    "eventType": {
+      "type": "string",
+      "const": "session.start"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "agentHost": {
+      "type": "string"
+    },
+    "repoRef": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object"
+    }
+  }
+}

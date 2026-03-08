@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harp-protocol.org/schemas/harp-core/artifact.json",
+  "title": "HARP-CORE Artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "artifactType",
+    "repoRef",
+    "payload",
+    "createdAt",
+    "expiresAt",
+    "artifactHashAlg",
+    "artifactHash"
+  ],
+  "properties": {
+    "requestId": {
+      "type": "string",
+      "description": "Globally unique identifier (UUID or ULID)."
+    },
+    "sessionId": {
+      "type": "string",
+      "description": "Optional session identifier (UUID or ULID)."
+    },
+    "artifactType": {
+      "type": "string",
+      "enum": [
+        "plan.review",
+        "task.review",
+        "patch.review",
+        "command.review",
+        "checkpoint.review"
+      ]
+    },
+    "repoRef": {
+      "type": "string",
+      "description": "Opaque repository reference agreed by participants."
+    },
+    "baseRevision": {
+      "type": "string",
+      "description": "Optional base revision identifier (commit SHA, tag, etc.)."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "description": "Plaintext payload prior to encryption. Canonicalized for hashing."
+    },
+    "artifactHashAlg": {
+      "type": "string",
+      "enum": [
+        "SHA-256"
+      ]
+    },
+    "artifactHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Hex SHA-256 of canonical artifact-without artifactHash field (see spec)."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional non-sensitive metadata; MUST be included in canonicalization if present."
+    },
+    "extensions": {
+      "type": "object",
+      "description": "Optional extension fields under namespaced keys."
+    }
+  }
+}

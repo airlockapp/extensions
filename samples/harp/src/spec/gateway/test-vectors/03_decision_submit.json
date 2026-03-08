@@ -1,0 +1,17 @@
+{
+  "msgType": "decision.submit",
+  "requestId": "req-u6s2nku4oo",
+  "createdAt": "2026-02-24T10:01:00Z",
+  "sender": {
+    "approverId": "app-01"
+  },
+  "body": {
+    "artifactHash": "sha256:fe94a9a087129947cc76a6749363bff39e0dcfd64398906bb3123df38913b2a9",
+    "decision": "approve",
+    "reason": "Looks good",
+    "signerKeyId": "key-approver-01",
+    "nonce": "nonce-0001",
+    "signature": "BASE64_SIGNATURE_PLACEHOLDER",
+    "decisionHash": "sha256:d8e6adf8219a5b988eeff2d3e39411b7af23cba5e271078767747dbbae856650"
+  }
+}

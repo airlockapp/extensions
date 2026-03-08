@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harp-protocol.org/schemas/harp-gateway-decision-submit.schema.json",
+  "title": "Decision Submit Body",
+  "type": "object",
+  "required": [
+    "artifactHash",
+    "decision",
+    "signerKeyId",
+    "nonce",
+    "signature"
+  ],
+  "properties": {
+    "artifactHash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "approve",
+        "reject"
+      ]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "signerKeyId": {
+      "type": "string"
+    },
+    "nonce": {
+      "type": "string"
+    },
+    "signature": {
+      "type": "string",
+      "description": "Base64 signature over canonical decision payload."
+    },
+    "decisionHash": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}
