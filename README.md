@@ -40,9 +40,6 @@ airlock-extensions/
 │   ├── airlock-antigravity-enforcer/   # VS Code Antigravity enforcer
 │   ├── build-enforcers.ps1             # Build single mode (dev/prod)
 │   └── build-extensions.ps1            # Build all modes (wrapper)
-├── dist/                               # Built VSIX packages (gitignored)
-│   ├── dev/                            # Dev builds (-dev suffix)
-│   └── prod/                           # Production builds
 ├── samples/                            # HARP protocol samples
 └── README.md
 ```
