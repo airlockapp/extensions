@@ -112,7 +112,7 @@ function readStdin() {
         process.stdin.on("end", onEnd);
         process.stdin.on("error", onError);
 
-        const stdinTimer = setTimeout(done, (timeoutSeconds + 10) * 1000);
+        const stdinTimer = setTimeout(done, (TIMEOUT_SECONDS + 10) * 1000);
         stdinTimer.unref();
     });
 }
