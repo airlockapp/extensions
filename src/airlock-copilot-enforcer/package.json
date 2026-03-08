@@ -4,6 +4,7 @@
     "description": "Airlock enforcement layer for GitHub Copilot — gates agent/tool-use actions through mobile approval. Uses Copilot's preToolUse hooks to intercept and gate all agent tool calls.",
     "version": "0.1.0",
     "publisher": "out-of-band-systems",
+    "license": "MIT",
     "icon": "images/icon.png",
     "repository": {
         "type": "git",

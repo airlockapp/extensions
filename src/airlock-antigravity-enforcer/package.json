@@ -4,6 +4,7 @@
     "description": "Airlock enforcement layer for Antigravity — gates agent/terminal commands through mobile approval",
     "version": "0.1.0",
     "publisher": "out-of-band-systems",
+    "license": "MIT",
     "icon": "images/icon.png",
     "repository": {
         "type": "git",

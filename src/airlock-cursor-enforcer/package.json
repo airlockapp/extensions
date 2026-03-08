@@ -4,6 +4,7 @@
     "description": "Airlock enforcement layer for Cursor IDE — gates agent/terminal commands through mobile approval. Requires 'Run Everything as Agent' run mode in Cursor settings for full enforcement.",
     "version": "0.1.0",
     "publisher": "out-of-band-systems",
+    "license": "MIT",
     "icon": "images/icon.png",
     "repository": {
         "type": "git",
