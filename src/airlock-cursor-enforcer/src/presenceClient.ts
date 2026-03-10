@@ -41,8 +41,9 @@ export class PresenceClient {
     /**
      * Connect to the Gateway WebSocket endpoint for presence.
      * Uses Bearer token for authentication instead of client credentials.
+     * tokenGetter is async to allow token refresh (ensureFreshToken) before connecting.
      */
-    connect(gatewayUrl: string, tokenGetter: () => string | undefined, enforcerDeviceId: string): void {
+    async connect(gatewayUrl: string, tokenGetter: () => Promise<string | undefined>, enforcerDeviceId: string): Promise<void> {
         if (this.ws) {
             this.disconnect();
         }
@@ -54,8 +55,8 @@ export class PresenceClient {
             id: enforcerDeviceId,
         });
 
-        // Get fresh token for this connection attempt
-        const token = tokenGetter();
+        // Get fresh token for this connection attempt (async — allows refresh)
+        const token = await tokenGetter();
 
         // Pass token as query param for WS (headers not universally supported)
         if (token) {
@@ -121,6 +122,10 @@ export class PresenceClient {
             this.emitter.fire("disconnected");
 
             if (!this.disposed) {
+                if (code === 1008 || code === 4401) {
+                    // 1008 = Policy Violation (auth failure), 4401 = custom 401
+                    this.out.appendLine(`[Airlock Presence] Auth failure (code=${code}) — will refresh token before reconnect`);
+                }
                 this.scheduleReconnect(gatewayUrl, tokenGetter, enforcerDeviceId);
             }
         });
@@ -144,8 +149,7 @@ export class PresenceClient {
             return;
         }
 
-        const ws = vscode.workspace.workspaceFolders?.[0];
-        const workspaceName = ws?.name || "unknown";
+        const workspaceName = vscode.workspace.name || vscode.workspace.workspaceFolders?.[0]?.name || "unknown";
 
         const hello = JSON.stringify({
             msgType: "hello",
@@ -167,7 +171,7 @@ export class PresenceClient {
      */
     private scheduleReconnect(
         gatewayUrl: string,
-        tokenGetter: () => string | undefined,
+        tokenGetter: () => Promise<string | undefined>,
         enforcerDeviceId: string
     ): void {
         if (this.disposed || this.reconnectTimer) {
@@ -178,9 +182,9 @@ export class PresenceClient {
             `[Airlock Presence] Reconnecting in ${this.reconnectDelay / 1000}s...`
         );
 
-        this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = setTimeout(async () => {
             this.reconnectTimer = null;
-            this.connect(gatewayUrl, tokenGetter, enforcerDeviceId);
+            await this.connect(gatewayUrl, tokenGetter, enforcerDeviceId);
         }, this.reconnectDelay);
 
         // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (max)

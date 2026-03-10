@@ -27,6 +27,7 @@ export class AutoModeController implements vscode.Disposable {
     private _strategyDisposable: vscode.Disposable | null = null;
     private _strategy: DetectionStrategy | null = null;
     private _pendingAbort: AbortController | null = null;
+    private _diagnosticMode = false;
 
     constructor(
         private readonly _out: vscode.OutputChannel,
@@ -37,6 +38,11 @@ export class AutoModeController implements vscode.Disposable {
         private _getAuthToken: () => string | undefined = () => undefined
     ) {
         this._enabled = this._context.workspaceState.get("airlock.autoMode", false);
+    }
+
+    /** Update diagnostic mode at runtime. */
+    setDiagnosticMode(enabled: boolean): void {
+        this._diagnosticMode = enabled;
     }
 
     get isEnabled(): boolean {
@@ -134,11 +140,15 @@ export class AutoModeController implements vscode.Disposable {
      * 4. On DENY → skip
      */
     private async _handlePending(pending: PendingApproval): Promise<void> {
-        this._out.appendLine(`[Airlock Auto] ──────────────────────────────────────────`);
-        this._out.appendLine(`[Airlock Auto] EVENT: ${pending.type} "${pending.buttonText}"`);
-        this._out.appendLine(`[Airlock Auto]   strategy: ${this._strategy?.name ?? 'none'} | processing: ${this._processing} | enabled: ${this._enabled}`);
+        if (this._diagnosticMode) {
+            this._out.appendLine(`[Airlock Auto] ──────────────────────────────────────────`);
+            this._out.appendLine(`[Airlock Auto] EVENT: ${pending.type} "${pending.buttonText}"`);
+            this._out.appendLine(`[Airlock Auto]   strategy: ${this._strategy?.name ?? 'none'} | processing: ${this._processing} | enabled: ${this._enabled}`);
+        }
         if (!this._enabled || this._processing) {
-            this._out.appendLine(`[Airlock Auto]   SKIPPED (${!this._enabled ? 'disabled' : 'already processing'})`);
+            if (this._diagnosticMode) {
+                this._out.appendLine(`[Airlock Auto]   SKIPPED (${!this._enabled ? 'disabled' : 'already processing'})`);
+            }
             return;
         }
 
@@ -148,7 +158,9 @@ export class AutoModeController implements vscode.Disposable {
             updateApprovalStatusBar(this._approvalItem, "paused");
             return;
         }
-        this._out.appendLine(`[Airlock Auto]   endpoint: ${endpoint.url}`);
+        if (this._diagnosticMode) {
+            this._out.appendLine(`[Airlock Auto]   endpoint: ${endpoint.url}`);
+        }
 
         // Abort any previous in-flight approval (button changed = manual action)
         if (this._pendingAbort) {
@@ -167,9 +179,11 @@ export class AutoModeController implements vscode.Disposable {
             this._out.appendLine(
                 `[Airlock Auto] 📤 Requesting approval (${requestId})`
             );
-            this._out.appendLine(
-                `[Airlock Auto]   type: ${pending.type} | commandText: ${(pending.commandText ?? pending.buttonText).substring(0, 150)}`
-            );
+            if (this._diagnosticMode) {
+                this._out.appendLine(
+                    `[Airlock Auto]   type: ${pending.type} | commandText: ${(pending.commandText ?? pending.buttonText).substring(0, 150)}`
+                );
+            }
             updateApprovalStatusBar(this._approvalItem, "approving");
 
             const response = await requestApproval(
@@ -182,7 +196,8 @@ export class AutoModeController implements vscode.Disposable {
                 this._context,
                 requestId,
                 abortController.signal,
-                this._getAuthToken()
+                this._getAuthToken(),
+                this._diagnosticMode
             );
 
             this._consecutiveErrors = 0;

@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Wrapper script that calls build-enforcers.ps1 twice — once for dev and
-    once for prod — producing two sets of VSIX packages in dist/.
+    once for prod — producing two sets of VSIX packages in extensions_dist/.
 
     Dev packages have "-dev" appended to the extension name:
       airlock-cursor-enforcer-dev-0.1.0.vsix
@@ -19,15 +19,25 @@
 .PARAMETER Mode
     Which mode(s) to build: "dev", "prod", or "all" (default: "all").
 
+.PARAMETER Name
+    Optional. Build only the specified extension.
+    Accepts short names (e.g., "cursor") or full names (e.g., "airlock-cursor-enforcer").
+
 .EXAMPLE
-    .\build-extensions.ps1              # Builds both dev and prod
+    .\build-extensions.ps1              # Builds all dev and prod
     .\build-extensions.ps1 -Mode dev    # Builds only dev
     .\build-extensions.ps1 -Mode prod   # Builds only prod
+    .\build-extensions.ps1 -Mode prod -Name cursor  # Builds only cursor prod
 #>
 
 param(
     [ValidateSet("dev", "prod", "all")]
-    [string]$Mode = "all"
+    [string]$Mode = "all",
+
+    [ValidateSet("cursor", "windsurf", "copilot", "antigravity",
+        "airlock-cursor-enforcer", "airlock-windsurf-enforcer",
+        "airlock-copilot-enforcer", "airlock-antigravity-enforcer")]
+    [string]$Name
 )
 
 $ErrorActionPreference = "Stop"
@@ -53,7 +63,9 @@ foreach ($m in $modes) {
     Write-Host "  Building $($m.ToUpper()) extensions" -ForegroundColor Magenta
     Write-Host "================================================================" -ForegroundColor Magenta
 
-    & $buildScript -Mode $m
+    $buildArgs = @{ Mode = $m }
+    if ($Name) { $buildArgs['Name'] = $Name }
+    & $buildScript @buildArgs
     if ($LASTEXITCODE -ne 0) {
         Write-Host ""
         Write-Host "ERROR: $m build failed!" -ForegroundColor Red
@@ -67,8 +79,8 @@ Write-Host "================================================================" -F
 Write-Host "  Build Complete" -ForegroundColor Magenta
 Write-Host "================================================================" -ForegroundColor Magenta
 
-$repoRoot = Split-Path $scriptDir -Parent
-$distDir = Join-Path $repoRoot "dist"
+$repoRoot = Split-Path (Split-Path $scriptDir -Parent) -Parent
+$distDir = Join-Path $repoRoot "extensions_dist"
 
 Write-Host ""
 Write-Host "All VSIX files in: $distDir" -ForegroundColor Cyan

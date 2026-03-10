@@ -23,7 +23,7 @@ export interface EndpointInfo {
 }
 
 /**
- * Resolve the Airlock approval endpoint.
+ * Resolve the Airlock Gateway URL.
  * Priority: (1) Local Gateway/HE daemon probe, (2) VS Code setting, (3) Env vars,
  * (4) for release/prod builds only, default to DEFAULT_RELEASE_GATEWAY.
  * Returns null if no endpoint is found (dev builds only).
@@ -32,7 +32,15 @@ export async function resolveEndpoint(
     out: vscode.OutputChannel,
     extensionName?: string
 ): Promise<EndpointInfo | null> {
-    out.appendLine("\n[Airlock] Resolving approval endpoint...");
+    out.appendLine("\n[Airlock] Resolving gateway...");
+
+    const isDevBuild = !extensionName || extensionName.endsWith("-dev");
+
+    // Prod builds: always use the hosted gateway (no user override)
+    if (!isDevBuild) {
+        out.appendLine(`  ✓ Using release gateway: ${DEFAULT_RELEASE_GATEWAY}`);
+        return { url: DEFAULT_RELEASE_GATEWAY, source: "default" };
+    }
 
     // (1) Probe local Gateway / HE daemon
     for (const probeUrl of PROBE_URLS) {
@@ -53,15 +61,14 @@ export async function resolveEndpoint(
     // (2) VS Code setting
     const settingUrl = vscode.workspace
         .getConfiguration("airlock")
-        .get<string>("approvalEndpoint");
+        .get<string>("gatewayUrl");
     if (settingUrl && settingUrl.trim()) {
         out.appendLine(`  ✓ Using setting: ${settingUrl}`);
         return { url: settingUrl.trim(), source: "setting" };
     }
 
     // (3) Environment variables
-    const envUrl =
-        process.env.AIRLOCK_APPROVAL_ENDPOINT || process.env.AIRLOCK_HE_ENDPOINT;
+    const envUrl = process.env.AIRLOCK_GATEWAY_URL;
     if (envUrl && envUrl.trim()) {
         out.appendLine(`  ✓ Using env var: ${envUrl}`);
         return { url: envUrl.trim(), source: "env" };
@@ -73,13 +80,13 @@ export async function resolveEndpoint(
         return { url: DEFAULT_RELEASE_GATEWAY, source: "default" };
     }
 
-    out.appendLine("  ⚠ No approval endpoint found.");
+    out.appendLine("  ⚠ No gateway found.");
     return null;
 }
 
 /**
  * HTTP/HTTPS GET probe with 2-second timeout. Returns true if 2xx.
- * Accepts self-signed certificates (Aspire dev cert).
+ * Self-signed certs are accepted only when airlock.allowSelfSignedCerts is enabled.
  */
 function probeHealth(url: string): Promise<boolean> {
     return new Promise((resolve) => {
@@ -92,8 +99,6 @@ function probeHealth(url: string): Promise<boolean> {
             port: parsed.port,
             path: parsed.pathname,
             timeout: 2000,
-            // Accept Aspire self-signed dev certificate
-            rejectUnauthorized: false,
         }, (res) => {
             clearTimeout(timeout);
             resolve(res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 300);

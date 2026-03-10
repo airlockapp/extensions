@@ -70,7 +70,7 @@ export async function requestApproval(
     if (routingToken) {
         // Privacy-preserving: Gateway routes by opaque token, cannot see real approverId
         metadata.routingToken = routingToken;
-        out.appendLine(`[Airlock] Using opaque routing token: ${routingToken} (approverId hidden from Gateway)`);
+        out.appendLine(`[Airlock] Using opaque routing token (${routingToken.length} chars)`);
     } else {
         // Backward compatible: send real approverId if no routing token available
         const approverId = vscode.workspace.getConfiguration("airlock").get<string>("approverId");
@@ -333,8 +333,6 @@ function httpRequest(method: string, url: string, body?: object, abortSignal?: A
                     }
                     : {},
                 timeout: 650_000, // slightly over max poll window (10 min)
-                // Accept Aspire self-signed dev certificate
-                rejectUnauthorized: false,
             },
             (res) => {
                 let responseData = "";

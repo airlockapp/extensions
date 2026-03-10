@@ -186,8 +186,6 @@ function httpPost<T>(url: string, body: string, token?: string): Promise<T> {
             method: "POST",
             headers,
             timeout: 10000,
-            // Accept Aspire self-signed dev certificate
-            rejectUnauthorized: false,
         }, (res) => {
             let data = "";
             res.on("data", (chunk) => (data += chunk));
@@ -222,8 +220,6 @@ function httpGet<T>(url: string, token?: string): Promise<T> {
             path: parsed.pathname + parsed.search,
             headers,
             timeout: 5000,
-            // Accept Aspire self-signed dev certificate
-            rejectUnauthorized: false,
         }, (res) => {
             let data = "";
             res.on("data", (chunk) => (data += chunk));

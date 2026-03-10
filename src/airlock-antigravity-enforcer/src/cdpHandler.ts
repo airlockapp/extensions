@@ -50,6 +50,7 @@ export class CdpDetectionStrategy implements DetectionStrategy {
     private _lastTargetSignature = ""; // Only log targets when list changes
     private _diagCounter = 0;
     private _ownPort: number | null = null; // Cached: CDP port owned by our VS Code window
+    private _diagnosticMode = false;
 
 
     constructor(
@@ -61,16 +62,21 @@ export class CdpDetectionStrategy implements DetectionStrategy {
         private readonly _workspaceName: string = ""
     ) { }
 
+    /** Update diagnostic mode at runtime (when setting changes). */
+    setDiagnosticMode(enabled: boolean): void {
+        this._diagnosticMode = enabled;
+    }
+
     // ── Availability ───────────────────────────────────────────────
     async isAvailable(): Promise<boolean> {
         // Retry with backoff — CDP port may not be ready yet at extension activation
         for (let attempt = 1; attempt <= 3; attempt++) {
             const instances = await this._scanForInstances();
             if (instances.length > 0) {
-                this._log(`CDP available (attempt ${attempt})`);
+                this._logDiag(`CDP available (attempt ${attempt})`);
                 return true;
             }
-            this._log(`CDP scan attempt ${attempt}/3: no instances found`);
+            this._logDiag(`CDP scan attempt ${attempt}/3: no instances found`);
             if (attempt < 3) {
                 await new Promise(r => setTimeout(r, 2000));
             }
@@ -97,7 +103,7 @@ export class CdpDetectionStrategy implements DetectionStrategy {
         try {
             await this._connectAndInject();
         } catch {
-            this._log("Initial connect failed — _tick will retry.");
+            this._logDiag("Initial connect failed — _tick will retry.");
         }
 
         if (this._pollTimer) { clearInterval(this._pollTimer); }
@@ -105,7 +111,7 @@ export class CdpDetectionStrategy implements DetectionStrategy {
             () => void this._tick(),
             config.pollIntervalMs
         );
-        this._log("Polling started.");
+        this._logDiag("Polling started.");
     }
 
     async stop(): Promise<void> {
@@ -115,7 +121,7 @@ export class CdpDetectionStrategy implements DetectionStrategy {
             clearInterval(this._pollTimer);
             this._pollTimer = null;
         }
-        this._log("Polling paused (connections preserved).");
+        this._logDiag("Polling paused (connections preserved).");
     }
 
     /** Full cleanup — called only on extension deactivation */
@@ -154,7 +160,7 @@ export class CdpDetectionStrategy implements DetectionStrategy {
         })()`;
         try {
             const result = await this._evaluate(pageId, js);
-            this._log(`Click result on ${pageId}: ${JSON.stringify(result)}`);
+            this._logDiag(`Click result on ${pageId}: ${JSON.stringify(result)}`);
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
             this._log(`Click failed on ${pageId}: ${msg}`);
@@ -189,7 +195,7 @@ export class CdpDetectionStrategy implements DetectionStrategy {
         })()`;
         try {
             const result = await this._evaluate(pageId, js);
-            this._log(`Reject click result on ${pageId}: ${JSON.stringify(result)}`);
+            this._logDiag(`Reject click result on ${pageId}: ${JSON.stringify(result)}`);
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
             this._log(`Reject click failed on ${pageId}: ${msg}`);
@@ -202,9 +208,9 @@ export class CdpDetectionStrategy implements DetectionStrategy {
         // Reconnect / inject on new pages
         await this._connectAndInject();
 
-        // Run diagnostic every 10 ticks to see what buttons are visible
+        // Run diagnostic every 10 ticks to see what buttons are visible (diagnostic mode only)
         this._diagCounter++;
-        if (this._diagCounter % 10 === 1) {
+        if (this._diagnosticMode && this._diagCounter % 10 === 1) {
             for (const [pageId] of this._connections) {
                 try {
                     const diagResult = await this._evaluate(pageId,
@@ -214,9 +220,9 @@ export class CdpDetectionStrategy implements DetectionStrategy {
                         const diag = JSON.parse(diagRaw);
                         if (diag.buttonCount > 0) {
                             const acceptBtns = diag.buttons.filter((b: { isAccept: boolean }) => b.isAccept);
-                            this._log(`[diag] page=${pageId.substring(0, 8)} docs=${diag.docCount} buttons=${diag.buttonCount} accept=${acceptBtns.length}`);
+                            this._logDiag(`[diag] page=${pageId.substring(0, 8)} docs=${diag.docCount} buttons=${diag.buttonCount} accept=${acceptBtns.length}`);
                             for (const b of diag.buttons.slice(0, 15)) {
-                                this._log(`[diag]   ${b.tag} text="${b.text}" inArea=${b.inConvArea} accept=${b.isAccept} vis=${b.visible} cls=${b.classes?.substring(0, 40)}`);
+                                this._logDiag(`[diag]   ${b.tag} text="${b.text}" inArea=${b.inConvArea} accept=${b.isAccept} vis=${b.visible} cls=${b.classes?.substring(0, 40)}`);
                             }
                         }
                     }
@@ -235,7 +241,7 @@ export class CdpDetectionStrategy implements DetectionStrategy {
                 // Re-inject if the script was lost (page navigated, etc.)
                 if (raw === null || raw === undefined) {
                     if (conn.injected) {
-                        this._log(`Script lost on ${pageId} — re-injecting...`);
+                        this._logDiag(`Script lost on ${pageId} — re-injecting...`);
                         conn.injected = false;
                         await this._injectScript(pageId);
                     }
@@ -255,8 +261,8 @@ export class CdpDetectionStrategy implements DetectionStrategy {
                     continue;
                 }
 
-                if (buttons.length > 0) {
-                    this._log(`[tick] ${buttons.length} button(s) found on ${pageId}: ${buttons.map(b => `"${b.text}"`).join(", ")}`);
+                if (buttons.length > 0 && this._diagnosticMode) {
+                    this._logDiag(`[tick] ${buttons.length} button(s) found on ${pageId}: ${buttons.map(b => `"${b.text}"`).join(", ")}`);
                 }
 
                 for (const btn of buttons) {
@@ -287,7 +293,7 @@ export class CdpDetectionStrategy implements DetectionStrategy {
         // Remove buttons that are no longer visible (allow re-detection if they come back)
         for (const id of this._seenButtons) {
             if (!currentButtons.has(id)) {
-                this._log(`Button disappeared: ${id} — firing cancellation`);
+                this._logDiag(`Button disappeared: ${id} — firing cancellation`);
                 this._seenButtons.delete(id);
                 this._onPendingCancelled.fire(id);
             }
@@ -335,13 +341,13 @@ export class CdpDetectionStrategy implements DetectionStrategy {
             try {
                 const pages = await this._getPages(port);
                 if (pages.length > 0) {
-                    this._log(`Found ${pages.length} page(s) on port ${port}`);
+                    this._logDiag(`Found ${pages.length} page(s) on port ${port}`);
                     instances.push({ port, pages });
                 }
             } catch { /* port not available */ }
         }
         if (instances.length === 0) {
-            this._log(`No CDP instances found in port range ${this._portStart}-${this._portEnd}`);
+            this._logDiag(`No CDP instances found in port range ${this._portStart}-${this._portEnd}`);
         }
         return instances;
     }
@@ -360,12 +366,12 @@ export class CdpDetectionStrategy implements DetectionStrategy {
      */
     private async _findOwnPort(): Promise<number | null> {
         if (!this._ownPid) { return null; }
-        this._log(`Detecting own CDP port (starting PID=${this._ownPid})...`);
+        this._logDiag(`Detecting own CDP port (starting PID=${this._ownPid})...`);
 
         try {
             // Collect all ancestor PIDs up to the root Electron process
             const ancestors = this._getAncestorPids(this._ownPid);
-            this._log(`Ancestor PID chain: ${ancestors.join(" → ")}`);
+            this._logDiag(`Ancestor PID chain: ${ancestors.join(" → ")}`);
 
             if (process.platform === "win32") {
                 return this._findOwnPortWindows(ancestors);
@@ -428,7 +434,7 @@ export class CdpDetectionStrategy implements DetectionStrategy {
                 }
             }
         } catch (err: unknown) {
-            this._log(`Process tree walk failed: ${err instanceof Error ? err.message : String(err)}`);
+            this._logDiag(`Process tree walk failed: ${err instanceof Error ? err.message : String(err)}`);
         }
         return ancestors;
     }
@@ -448,14 +454,14 @@ export class CdpDetectionStrategy implements DetectionStrategy {
             if (match) {
                 const listenerPid = parseInt(match[1], 10);
                 if (ancestorSet.has(listenerPid)) {
-                    this._log(`✓ Own port detected: ${port} (PID=${listenerPid} is ancestor of extension host)`);
+                    this._logDiag(`✓ Own port detected: ${port} (PID=${listenerPid} is ancestor of extension host)`);
                     return port;
                 } else {
-                    this._log(`  Port ${port} owned by PID=${listenerPid} (not in our ancestor chain)`);
+                    this._logDiag(`  Port ${port} owned by PID=${listenerPid} (not in our ancestor chain)`);
                 }
             }
         }
-        this._log(`No port in range ${this._portStart}-${this._portEnd} matched ancestor PIDs: ${ancestorPids.join(", ")}`);
+        this._logDiag(`No port in range ${this._portStart}-${this._portEnd} matched ancestor PIDs: ${ancestorPids.join(", ")}`);
         return null;
     }
 
@@ -471,14 +477,14 @@ export class CdpDetectionStrategy implements DetectionStrategy {
                 if (!output) { continue; }
                 const listenerPid = parseInt(output.split("\n")[0], 10);
                 if (ancestorSet.has(listenerPid)) {
-                    this._log(`✓ Own port detected: ${port} (PID=${listenerPid} is ancestor of extension host)`);
+                    this._logDiag(`✓ Own port detected: ${port} (PID=${listenerPid} is ancestor of extension host)`);
                     return port;
                 } else {
-                    this._log(`  Port ${port} owned by PID=${listenerPid} (not in our ancestor chain)`);
+                    this._logDiag(`  Port ${port} owned by PID=${listenerPid} (not in our ancestor chain)`);
                 }
             } catch { /* port not listening */ }
         }
-        this._log(`No port in range ${this._portStart}-${this._portEnd} matched ancestor PIDs: ${ancestorPids.join(", ")}`);
+        this._logDiag(`No port in range ${this._portStart}-${this._portEnd} matched ancestor PIDs: ${ancestorPids.join(", ")}`);
         return null;
     }
 
@@ -514,10 +520,12 @@ export class CdpDetectionStrategy implements DetectionStrategy {
                             const sig = parsed.map(p => `${p.type}:${p.id}`).sort().join(",");
                             if (sig !== this._lastTargetSignature) {
                                 this._lastTargetSignature = sig;
-                                for (const p of parsed) {
-                                    this._log(`  Target: type=${p.type ?? "?"} title="${p.title ?? "?"}" ws=${p.webSocketDebuggerUrl ? "yes" : "no"}`);
+                                if (this._diagnosticMode) {
+                                    for (const p of parsed) {
+                                        this._logDiag(`  Target: type=${p.type ?? "?"} title="${p.title ?? "?"}" ws=${p.webSocketDebuggerUrl ? "yes" : "no"}`);
+                                    }
+                                    this._logDiag(`  Workspace filter: "${this._workspaceName}" → ${evaluatable.length} owned / ${parsed.length} total on port ${port}`);
                                 }
-                                this._log(`  Workspace filter: "${this._workspaceName}" → ${evaluatable.length} owned / ${parsed.length} total on port ${port}`);
                             }
                             resolve(evaluatable);
                         } catch (e) {
@@ -542,9 +550,9 @@ export class CdpDetectionStrategy implements DetectionStrategy {
                     if (conn) {
                         try {
                             await this._sendCommand(page.id, "Runtime.enable", {}, 5000);
-                            this._log(`Runtime.enable OK on ${page.id}`);
+                            this._logDiag(`Runtime.enable OK on ${page.id}`);
                         } catch {
-                            this._log(`Runtime.enable failed on ${page.id} — may still work`);
+                            this._logDiag(`Runtime.enable failed on ${page.id} — may still work`);
                         }
                     }
                 }
@@ -563,7 +571,7 @@ export class CdpDetectionStrategy implements DetectionStrategy {
             const ws = new WebSocket(page.webSocketDebuggerUrl);
             ws.on("open", () => {
                 this._connections.set(page.id, { ws, injected: false });
-                this._log(`Connected to page ${page.id} (type=${page.type ?? "?"}, title="${page.title ?? "?"}")`);
+                this._logDiag(`Connected to page ${page.id} (type=${page.type ?? "?"}, title="${page.title ?? "?"}")`);
                 resolve();
             });
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -594,23 +602,23 @@ export class CdpDetectionStrategy implements DetectionStrategy {
                         const handler = this._pendingMessages.get(msg.id)!;
                         this._pendingMessages.delete(msg.id);
                         if (msg.error) {
-                            this._log(`CDP error for msg ${msg.id}: ${msg.error.message}`);
+                            this._logDiag(`CDP error for msg ${msg.id}: ${msg.error.message}`);
                             handler.reject(new Error(msg.error.message));
                         } else {
                             handler.resolve(msg.result);
                         }
                     }
                 } catch (parseErr) {
-                    this._log(`Message parse error: ${parseErr}`);
+                    this._logDiag(`Message parse error: ${parseErr}`);
                 }
             });
             ws.on("error", (err) => {
-                this._log(`WS error on ${page.id}: ${err instanceof Error ? err.message : err}`);
+                this._logDiag(`WS error on ${page.id}: ${err instanceof Error ? err.message : err}`);
                 this._connections.delete(page.id);
                 resolve();
             });
             ws.on("close", () => {
-                this._log(`WS closed on ${page.id}`);
+                this._logDiag(`WS closed on ${page.id}`);
                 this._connections.delete(page.id);
             });
         });
@@ -619,12 +627,12 @@ export class CdpDetectionStrategy implements DetectionStrategy {
     private async _injectScript(pageId: string): Promise<void> {
         // Step 1: Probe — verify the WS roundtrip works at all
         try {
-            this._log(`Probing page ${pageId}...`);
+            this._logDiag(`Probing page ${pageId}...`);
             const probeResult = await this._sendCommand(pageId, "Runtime.evaluate", {
                 expression: "1+1",
                 returnByValue: true,
             }, 5000);
-            this._log(`Probe OK on ${pageId}: ${JSON.stringify(probeResult)}`);
+            this._logDiag(`Probe OK on ${pageId}: ${JSON.stringify(probeResult)}`);
         } catch (probeErr: unknown) {
             const msg = probeErr instanceof Error ? probeErr.message : String(probeErr);
             this._log(`Probe FAILED on ${pageId}: ${msg} — skipping injection`);
@@ -650,7 +658,7 @@ export class CdpDetectionStrategy implements DetectionStrategy {
         // Step 3: Inject with retry
         for (let attempt = 1; attempt <= 2; attempt++) {
             try {
-                this._log(`Injection attempt ${attempt} on ${pageId} (${script.length} chars)...`);
+                this._logDiag(`Injection attempt ${attempt} on ${pageId} (${script.length} chars)...`);
                 const result = await this._sendCommand(pageId, "Runtime.evaluate", {
                     expression: script,
                     userGesture: true,
@@ -668,7 +676,7 @@ export class CdpDetectionStrategy implements DetectionStrategy {
                 return; // Success or exception — don't retry
             } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : String(err);
-                this._log(`Injection attempt ${attempt} failed on ${pageId}: ${msg}`);
+                this._logDiag(`Injection attempt ${attempt} failed on ${pageId}: ${msg}`);
                 if (attempt < 2) {
                     // Brief pause before retry
                     await new Promise(r => setTimeout(r, 1000));
@@ -718,8 +726,16 @@ export class CdpDetectionStrategy implements DetectionStrategy {
         return this._connections.size;
     }
 
+    /** Always-on log (state changes, errors, essential events). */
     private _log(msg: string): void {
         this._out.appendLine(`${LOG_PREFIX} ${msg}`);
+    }
+
+    /** Diagnostic-only log (verbose CDP plumbing, tick polling, injection details). */
+    private _logDiag(msg: string): void {
+        if (this._diagnosticMode) {
+            this._out.appendLine(`${LOG_PREFIX} ${msg}`);
+        }
     }
 
     dispose(): void {

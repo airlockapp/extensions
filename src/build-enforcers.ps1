@@ -1,12 +1,12 @@
 <#
 .SYNOPSIS
     Compiles, packages (with all dependencies), and copies all Airlock enforcer
-    extension VSIX files to the dist folder.
+    extension VSIX files to the extensions_dist folder.
 
 .DESCRIPTION
     Iterates over each enforcer extension folder, runs npm install, compiles
     TypeScript, packages with vsce (--allow-missing-repository), and copies
-    the resulting .vsix file to dist/.
+    the resulting .vsix file to ../extensions_dist/.
 
     In dev mode, the package name is temporarily suffixed with "-dev" so VSIX
     files are distinctly named (e.g., airlock-cursor-enforcer-dev-0.1.0.vsix).
@@ -16,21 +16,33 @@
     - dev:  Patches package.json name with -dev suffix before packaging, restores after.
     - prod: Builds as-is with standard naming.
 
+.PARAMETER Name
+    Optional. Build only the specified extension.
+    Accepts short names (e.g., "cursor", "windsurf", "copilot", "antigravity")
+    or full names (e.g., "airlock-cursor-enforcer").
+    If omitted, all extensions are built.
+
 .EXAMPLE
     .\build-enforcers.ps1
     .\build-enforcers.ps1 -Mode dev
+    .\build-enforcers.ps1 -Mode prod -Name cursor
 #>
 
 param(
     [ValidateSet("dev", "prod")]
-    [string]$Mode = "prod"
+    [string]$Mode = "prod",
+
+    [ValidateSet("cursor", "windsurf", "copilot", "antigravity",
+        "airlock-cursor-enforcer", "airlock-windsurf-enforcer",
+        "airlock-copilot-enforcer", "airlock-antigravity-enforcer")]
+    [string]$Name
 )
 
 $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$repoRoot = Split-Path $scriptDir -Parent
-$distDir = Join-Path $repoRoot "dist"
+$repoRoot = Split-Path (Split-Path $scriptDir -Parent) -Parent
+$distDir = Join-Path $repoRoot "extensions_dist"
 $modeDistDir = Join-Path $distDir $Mode
 
 # Ensure dist folder exists
@@ -50,8 +62,21 @@ $failed = @()
 
 Write-Host ""
 Write-Host "Building enforcers in $($Mode.ToUpper()) mode" -ForegroundColor Cyan
-Write-Host ""
 
+# Filter to single extension if -Name provided
+if ($Name) {
+    # Support short names: "cursor" -> "airlock-cursor-enforcer"
+    $fullName = if ($Name -like "airlock-*") { $Name } else { "airlock-$Name-enforcer" }
+    if ($enforcers -notcontains $fullName) {
+        Write-Host "ERROR: Unknown extension '$Name'. Available: $($enforcers -join ', ')" -ForegroundColor Red
+        Write-Host "  Short names: cursor, windsurf, copilot, antigravity" -ForegroundColor Yellow
+        exit 1
+    }
+    $enforcers = @($fullName)
+    Write-Host "  Filtering to: $fullName" -ForegroundColor Yellow
+}
+
+Write-Host ""
 foreach ($name in $enforcers) {
     $extDir = Join-Path $scriptDir $name
     if (-not (Test-Path $extDir)) {
@@ -93,8 +118,15 @@ foreach ($name in $enforcers) {
             Write-Host "  [DEV] Patched name -> $($pkg.name)" -ForegroundColor Yellow
         }
 
+        # 3. Clean old VSIX files before packaging
+        Write-Host "  [3/4] Cleaning old VSIX files..." -ForegroundColor DarkGray
+        Get-ChildItem -Path $extDir -Filter "*.vsix" -ErrorAction SilentlyContinue | Remove-Item -Force
+        # Also clean old VSIX for this enforcer from the dist folder
+        $cleanName = if ($Mode -eq "dev") { "$name-dev" } else { $name }
+        Get-ChildItem -Path $modeDistDir -Filter "$cleanName*.vsix" -ErrorAction SilentlyContinue | Remove-Item -Force
+
         # 4. Package VSIX with all dependencies included
-        Write-Host "  [3/3] Packaging VSIX..." -ForegroundColor DarkGray
+        Write-Host "  [4/4] Packaging VSIX..." -ForegroundColor DarkGray
         npx @vscode/vsce package --allow-missing-repository --skip-license 2>&1
         if ($LASTEXITCODE -ne 0) {
             Write-Host "  [FAIL] Package failed for $name" -ForegroundColor Red
@@ -102,11 +134,11 @@ foreach ($name in $enforcers) {
             continue
         }
 
-        # 5. Copy .vsix to dist
+        # 5. Copy .vsix to extensions_dist
         $vsix = Get-ChildItem -Path $extDir -Filter "*.vsix" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
         if ($vsix) {
             Copy-Item $vsix.FullName -Destination $modeDistDir -Force
-            Write-Host "  [OK] Copied $($vsix.Name) -> dist/$Mode/" -ForegroundColor Green
+            Write-Host "  [OK] Copied $($vsix.Name) -> extensions_dist/$Mode/" -ForegroundColor Green
         }
         else {
             Write-Host "  [WARN] No .vsix file found after packaging" -ForegroundColor Yellow

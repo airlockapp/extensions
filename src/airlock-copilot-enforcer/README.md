@@ -109,6 +109,13 @@ The extension also installs `.github/rules/airlock.md` — a project rule that i
 - **Copilot rules** — `.github/rules/airlock.md` instructs the agent to cooperate with the hook and never bypass it
 - **Timeout enforcement** — Configurable; default 60 seconds
 
+## Changelog
+
+### v0.3.0
+- **Security hardening** — Verbose approval logs gated behind `diagnosticMode`; routing tokens masked in logs
+- **TLS fix** — All HTTP clients now respect `allowSelfSignedCerts` setting
+- **Diagnostic mode** — Approval request details only logged when `airlock.diagnosticMode` is enabled
+
 ## Platform Support
 
 Windows ✅ · macOS ✅ · Linux ✅

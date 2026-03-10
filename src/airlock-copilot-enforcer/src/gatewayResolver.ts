@@ -17,7 +17,7 @@ const PROBE_URLS = [
     "http://localhost:7771/healthz",
 ];
 
-export interface EndpointInfo {
+export interface GatewayInfo {
     url: string;
     source: "daemon" | "setting" | "env" | "default";
 }
@@ -26,12 +26,12 @@ export interface EndpointInfo {
  * Resolve the Airlock Gateway URL.
  * Priority: (1) Local Gateway/HE daemon probe, (2) VS Code setting, (3) Env vars,
  * (4) for release/prod builds only, default to DEFAULT_RELEASE_GATEWAY.
- * Returns null if no endpoint is found (dev builds only).
+ * Returns null if no gateway is found (dev builds only).
  */
-export async function resolveEndpoint(
+export async function resolveGateway(
     out: vscode.OutputChannel,
     extensionName?: string
-): Promise<EndpointInfo | null> {
+): Promise<GatewayInfo | null> {
     out.appendLine("\n[Airlock] Resolving gateway...");
 
     const isDevBuild = !extensionName || extensionName.endsWith("-dev");

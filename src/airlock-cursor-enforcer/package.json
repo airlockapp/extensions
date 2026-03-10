@@ -2,7 +2,7 @@
     "name": "airlock-cursor-enforcer",
     "displayName": "Airlock Cursor Enforcer",
     "description": "Airlock enforcement layer for Cursor IDE — gates agent/terminal commands through mobile approval. Requires 'Run Everything as Agent' run mode in Cursor settings for full enforcement.",
-    "version": "0.2.1",
+    "version": "0.3.0",
     "publisher": "out-of-band-systems",
     "license": "MIT",
     "icon": "images/icon.png",
@@ -39,8 +39,8 @@
                 "title": "Airlock: Show Status"
             },
             {
-                "command": "airlock.configureEndpoint",
-                "title": "Airlock: Configure Endpoint"
+                "command": "airlock.configureGateway",
+                "title": "Airlock: Configure Gateway"
             },
             {
                 "command": "airlock.startPairing",
@@ -88,10 +88,10 @@
                     "default": 60,
                     "description": "Timeout in seconds for waiting for mobile approval."
                 },
-                "airlock.approvalEndpoint": {
+                "airlock.gatewayUrl": {
                     "type": "string",
                     "default": "",
-                    "description": "Airlock approval endpoint URL (e.g. http://127.0.0.1:7771). If empty, auto-discovery is used."
+                    "description": "Airlock Gateway URL (e.g. http://127.0.0.1:7771). Used only in dev builds. If empty, auto-discovery is used."
                 },
                 "airlock.hookBeforeSubmitPrompt": {
                     "type": "boolean",
@@ -123,13 +123,30 @@
                     "default": false,
                     "scope": "application",
                     "description": "Allow self-signed or untrusted TLS certificates when connecting to the Airlock Gateway. Enable only for local development (e.g. Aspire dev certificates). Default: false (strict TLS verification)."
+                },
+                "airlock.failMode": {
+                    "type": "string",
+                    "enum": [
+                        "failClosed",
+                        "failOpen"
+                    ],
+                    "default": "failClosed",
+                    "description": "Behavior when the Airlock runtime is unavailable (e.g. extension not running, gateway unreachable, not signed in). failClosed = deny all actions (secure default). failOpen = allow actions to proceed."
                 }
             }
+        },
+        "menus": {
+            "commandPalette": [
+                {
+                    "command": "airlock.configureGateway",
+                    "when": "airlock.isDevBuild"
+                }
+            ]
         }
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",
-        "compile": "tsc -p ./ && node -e \"const fs=require('fs');fs.copyFileSync('src/hooksGateScript.js','out/hooksGateScript.js')\"",
+        "compile": "tsc -p ./ && node -e \"const fs=require('fs');fs.copyFileSync('src/airlock-bootstrap.js','out/airlock-bootstrap.js')\"",
         "watch": "tsc -watch -p ./",
         "pretest": "npm run compile && npm run lint",
         "lint": "eslint src",

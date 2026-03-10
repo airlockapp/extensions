@@ -39,21 +39,24 @@ export async function requestApproval(
     context?: vscode.ExtensionContext,
     externalRequestId?: string,
     abortSignal?: AbortSignal,
-    authToken?: string
+    authToken?: string,
+    diagnosticMode: boolean = false
 ): Promise<ApprovalResult> {
     const ws = vscode.workspace.workspaceFolders?.[0];
     const requestId = externalRequestId ?? "req-" + crypto.randomUUID();
     const msgId = "msg-" + crypto.randomUUID();
     const submitStartTime = Date.now();
 
-    out.appendLine(`[Airlock] ──────────────────────────────────────────`);
-    out.appendLine(`[Airlock] 📤 APPROVAL REQUEST START`);
-    out.appendLine(`[Airlock]   requestId: ${requestId}`);
-    out.appendLine(`[Airlock]   msgId: ${msgId}`);
-    out.appendLine(`[Airlock]   actionType: ${actionType}`);
-    out.appendLine(`[Airlock]   commandText: ${commandText.substring(0, 200)}${commandText.length > 200 ? '...' : ''}`);
-    out.appendLine(`[Airlock]   buttonText: ${buttonText.substring(0, 200)}${buttonText.length > 200 ? '...' : ''}`);
-    out.appendLine(`[Airlock]   timeout: ${timeoutSeconds}s`);
+    out.appendLine(`[Airlock] 📤 Approval request: ${actionType} (timeout=${timeoutSeconds}s)`);
+    if (diagnosticMode) {
+        out.appendLine(`[Airlock] ──────────────────────────────────────────`);
+        out.appendLine(`[Airlock]   requestId: ${requestId}`);
+        out.appendLine(`[Airlock]   msgId: ${msgId}`);
+        out.appendLine(`[Airlock]   actionType: ${actionType}`);
+        out.appendLine(`[Airlock]   commandText: ${commandText.substring(0, 200)}${commandText.length > 200 ? '...' : ''}`);
+        out.appendLine(`[Airlock]   buttonText: ${buttonText.substring(0, 200)}${buttonText.length > 200 ? '...' : ''}`);
+        out.appendLine(`[Airlock]   timeout: ${timeoutSeconds}s`);
+    }
 
     // Build HARP artifact.submit envelope
     const workspaceName = ws?.name || "unknown";
@@ -84,19 +87,19 @@ export async function requestApproval(
     }
 
     const ciphertext: EncryptedPayload = encryptPayload(plaintextContent, encryptionKey);
-    out.appendLine("[Airlock]   encryption: AES-256-GCM ✓");
+    if (diagnosticMode) { out.appendLine("[Airlock]   encryption: AES-256-GCM ✓"); }
 
     const routingToken = context ? getRoutingToken(context) : null;
     const metadata: Record<string, string> = {};
 
     if (routingToken) {
         metadata.routingToken = routingToken;
-        out.appendLine(`[Airlock]   routing: opaque token (${routingToken.length} chars)`);
+        if (diagnosticMode) { out.appendLine(`[Airlock]   routing: opaque token (${routingToken.length} chars)`); }
     } else {
         const approverId = vscode.workspace.getConfiguration("airlock").get<string>("approverId");
         if (approverId) {
             metadata.approverId = approverId;
-            out.appendLine(`[Airlock]   routing: approverId=${approverId}`);
+            if (diagnosticMode) { out.appendLine(`[Airlock]   routing: approverId=${approverId}`); }
         } else {
             out.appendLine(`[Airlock]   routing: NONE ⚠ (no routing token or approverId)`);
         }
@@ -105,7 +108,7 @@ export async function requestApproval(
     // Workspace identity — cleartext so the mobile app can group items by workspace
     metadata.repoName = "";
     metadata.workspaceName = workspaceName;
-    out.appendLine(`[Airlock]   workspace: ${workspaceName}`);
+    if (diagnosticMode) { out.appendLine(`[Airlock]   workspace: ${workspaceName}`); }
 
     const artifactBody = {
         artifactType: "command-approval",
@@ -135,8 +138,10 @@ export async function requestApproval(
     // Step 1: Submit artifact
     const submitUrl = `${endpointUrl}/v1/artifacts`;
     const artifactHash = (envelope.body as Record<string, unknown>).artifactHash as string;
-    out.appendLine(`[Airlock] 📡 POST ${submitUrl}`);
-    out.appendLine(`[Airlock]   artifactHash: ${artifactHash}`);
+    if (diagnosticMode) {
+        out.appendLine(`[Airlock] 📡 POST ${submitUrl}`);
+        out.appendLine(`[Airlock]   artifactHash: ${artifactHash}`);
+    }
 
     try {
         const submitResult = await httpRequest("POST", submitUrl, envelope, undefined, authToken);
@@ -381,8 +386,6 @@ function httpRequest(method: string, url: string, body?: object, abortSignal?: A
                 method,
                 headers: reqHeaders,
                 timeout: 650_000, // slightly over max poll window (10 min)
-                // Accept Aspire self-signed dev certificate
-                rejectUnauthorized: false,
             },
             (res) => {
                 let responseData = "";

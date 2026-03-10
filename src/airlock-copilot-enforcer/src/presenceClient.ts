@@ -40,13 +40,25 @@ export class PresenceClient {
 
     /**
      * Connect to the Gateway WebSocket endpoint for presence.
-     * Uses Bearer token for authentication instead of client credentials.
+     * Uses async tokenGetter to ensure fresh token on each connection attempt.
      */
-    connect(gatewayUrl: string, tokenGetter: () => string | undefined, enforcerDeviceId: string): void {
+    connect(gatewayUrl: string, tokenGetter: () => Promise<string | undefined>, enforcerDeviceId: string): void {
         if (this.ws) {
             this.disconnect();
         }
 
+        // Wrap the async connect logic
+        this._connectAsync(gatewayUrl, tokenGetter, enforcerDeviceId).catch(err => {
+            this.out.appendLine(`[Airlock Presence] Connect error: ${err}`);
+            this.scheduleReconnect(gatewayUrl, tokenGetter, enforcerDeviceId);
+        });
+    }
+
+    private async _connectAsync(
+        gatewayUrl: string,
+        tokenGetter: () => Promise<string | undefined>,
+        enforcerDeviceId: string
+    ): Promise<void> {
         // Build WS URL
         const wsBase = gatewayUrl.replace(/^http/, "ws");
         const params = new URLSearchParams({
@@ -55,7 +67,7 @@ export class PresenceClient {
         });
 
         // Get fresh token for this connection attempt
-        const token = tokenGetter();
+        const token = await tokenGetter();
 
         // Pass token as query param for WS (headers not universally supported)
         if (token) {
@@ -104,7 +116,6 @@ export class PresenceClient {
                         createdAt: msg.createdAt,
                     });
                 } else if (msg.msgType === "pairing.revoked") {
-                    // Mobile approver has removed this pairing — clear token and go offline
                     this.out.appendLine(`[Airlock Presence] Pairing revoked by mobile approver: ${msg.reason ?? ""}`);
                     this.emitter.fire("pairing.revoked");
                     // Do not reconnect after revocation — stay offline
@@ -115,10 +126,15 @@ export class PresenceClient {
             }
         });
 
-        this.ws.on("close", (code: number, reason: Buffer) => {
+        this.ws.on("close", (code: number, _reason: Buffer) => {
             this._isConnected = false;
             this.out.appendLine(`[Airlock Presence] Disconnected (code=${code})`);
             this.emitter.fire("disconnected");
+
+            // 401 close — token expired, will refresh on reconnect via async tokenGetter
+            if (code === 4001 || code === 401) {
+                this.out.appendLine("[Airlock Presence] Auth expired — will refresh token on reconnect");
+            }
 
             if (!this.disposed) {
                 this.scheduleReconnect(gatewayUrl, tokenGetter, enforcerDeviceId);
@@ -167,7 +183,7 @@ export class PresenceClient {
      */
     private scheduleReconnect(
         gatewayUrl: string,
-        tokenGetter: () => string | undefined,
+        tokenGetter: () => Promise<string | undefined>,
         enforcerDeviceId: string
     ): void {
         if (this.disposed || this.reconnectTimer) {

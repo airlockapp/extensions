@@ -7,22 +7,20 @@ import type {
     DetectionConfig,
     PendingApproval,
 } from "./detectionStrategy.js";
-import { NamedPipeProxy } from "./namedPipeProxy.js";
-import { getRoutingToken } from "./crypto.js";
 
 const LOG_PREFIX = "[Airlock Hooks]";
 
 /**
- * Hooks-based detection strategy for Windsurf IDE.
+ * Hooks-based detection strategy for Windsurf IDE (v3 Architecture).
  *
  * Uses Windsurf's native hooks system to intercept agent actions
  * via `pre_run_command` and `pre_mcp_tool_use` events.
  *
- * Architecture:
- *   1. On start(), installs `hooks.json` pointing to `hooksGateScript.js`
- *   2. The gate script runs as a separate process invoked by Windsurf
- *   3. Gate script calls Gateway → gets approval → exits with 0/2
- *   4. This strategy monitors a log file for reporting/diagnostics
+ * Architecture (v3 §2):
+ *   1. On start(), installs hooks.json pointing to bootstrap wrapper
+ *   2. Bootstrap reads stdin, connects to named pipe, sends JSON hook_request
+ *   3. Extension runtime (pipe server) handles all security logic
+ *   4. Bootstrap exits 0 (allow) or 2 (deny) — no disk log files
  *
  * Since Windsurf's hooks system handles the blocking/allowing natively,
  * this strategy doesn't need to detect buttons or click them.
@@ -38,7 +36,6 @@ export class HooksDetectionStrategy implements DetectionStrategy {
     readonly onPendingCancelled = this._onPendingCancelled.event;
 
     private _config: DetectionConfig | null = null;
-    private _logWatcher: fs.FSWatcher | null = null;
     private _hooksInstalled = false;
 
     constructor(
@@ -47,7 +44,7 @@ export class HooksDetectionStrategy implements DetectionStrategy {
         private readonly _enforcerId: string,
         private readonly _endpointUrl: string,
         private readonly _pipeName: string,
-        private readonly _localSecret: string,
+        private readonly _folderPath?: string,
     ) { }
 
     // ── Availability ───────────────────────────────────────────────
@@ -73,16 +70,9 @@ export class HooksDetectionStrategy implements DetectionStrategy {
             this._log(`✗ Failed to install hooks: ${msg}`);
             throw err;
         }
-
-        // Start monitoring the gate script's log file for diagnostics
-        this._startLogMonitor();
     }
 
     async stop(): Promise<void> {
-        if (this._logWatcher) {
-            this._logWatcher.close();
-            this._logWatcher = null;
-        }
         this._log("Hooks strategy stopped");
     }
 
@@ -100,14 +90,13 @@ export class HooksDetectionStrategy implements DetectionStrategy {
 
     // ── Hooks installation ─────────────────────────────────────────
 
-    /** Re-install hooks.json and gate script with current config (e.g., after pairing). */
+    /** Re-install hooks.json and bootstrap script with current config. */
     public async reinstallHooks(): Promise<void> {
         // Determine hooks.json location
-        // Project-level: .windsurf/hooks.json in workspace root
-        // Global: ~/.windsurf/hooks.json
-        const ws = vscode.workspace.workspaceFolders?.[0];
-        const hooksDir = ws
-            ? path.join(ws.uri.fsPath, ".windsurf")
+        // If _folderPath is set (multi-root), use it. Otherwise fall back to first workspace folder.
+        const folderPath = this._folderPath || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        const hooksDir = folderPath
+            ? path.join(folderPath, ".windsurf")
             : path.join(os.homedir(), ".windsurf");
 
         // Ensure .windsurf directory exists
@@ -118,97 +107,66 @@ export class HooksDetectionStrategy implements DetectionStrategy {
 
         const hooksJsonPath = path.join(hooksDir, "hooks.json");
 
-        // Resolve gate script path (bundled with the extension)
-        // Check out/ first (production), then src/ (F5 debug — copy step may not have run)
-        let gateScriptPath = path.join(__dirname, "hooksGateScript.js");
-        if (!fs.existsSync(gateScriptPath)) {
-            const srcFallback = path.join(__dirname, "..", "src", "hooksGateScript.js");
+        // ── Clean up legacy files (v3 §18) ──────────────────────
+        this._cleanupLegacyFiles(hooksDir);
+
+        // ── Resolve bootstrap script path ─────────────────────────
+        // Check out/ first (production), then src/ (F5 debug)
+        let bootstrapScriptPath = path.join(__dirname, "airlock-bootstrap.js");
+        if (!fs.existsSync(bootstrapScriptPath)) {
+            const srcFallback = path.join(__dirname, "..", "src", "airlock-bootstrap.js");
             if (fs.existsSync(srcFallback)) {
-                gateScriptPath = srcFallback;
-                this._log(`Gate script resolved from src/ fallback: ${gateScriptPath}`);
+                bootstrapScriptPath = srcFallback;
+                this._log(`Bootstrap script resolved from src/ fallback: ${bootstrapScriptPath}`);
             } else {
-                throw new Error(`Gate script not found at ${gateScriptPath} or ${srcFallback}`);
+                throw new Error(`Bootstrap script not found at ${bootstrapScriptPath} or ${srcFallback}`);
             }
         }
 
-        // Build the hooks config
-        // NOTE: process.execPath returns Windsurf.exe (Electron binary), not node.exe.
-        // Windsurf hooks run commands via shell, so we use 'node' from PATH.
+        // ── Build bootstrap wrapper ───────────────────────────────
+        // The wrapper only passes AIRLOCK_FAIL_MODE and AIRLOCK_PIPE_NAME (not secrets).
+        // Bootstrap computes the pipe name deterministically from cwd.
         const nodeCommand = "node";
+        const failMode = vscode.workspace.getConfiguration("airlock")
+            .get<string>("failMode", "failClosed");
 
-        // Get workspace and repo name for metadata
-        const workspaceName = ws?.name ?? "unknown";
-        const airlockCfg = vscode.workspace.getConfiguration("airlock");
-        const autoApprovePatterns = (airlockCfg.get<string[]>("autoApprovePatterns", []) || []).join("|");
-
-        // Log file for gate script diagnostics (in .windsurf dir next to hooks.json)
-        const logFilePath = path.join(hooksDir, "airlock-hooks.log");
-
-        // On Windows, use a .cmd batch wrapper that sets env vars and runs node.
-        // PowerShell doesn't properly forward stdin/piping when Windsurf invokes hooks.
         const isWindows = process.platform === "win32";
         let command: string;
 
         if (isWindows) {
-            const routingToken = getRoutingToken(this._context) || "";
             const cmdContent = [
                 "@echo off",
                 "setlocal",
+                `set AIRLOCK_FAIL_MODE=${failMode}`,
                 `set AIRLOCK_PIPE_NAME=${this._pipeName}`,
-                `set AIRLOCK_LOCAL_SECRET=${this._localSecret}`,
-                `set AIRLOCK_ENFORCER_ID=${this._enforcerId}`,
-                `set AIRLOCK_TIMEOUT_SECONDS=${this._getTimeoutSeconds()}`,
-                `set AIRLOCK_WORKSPACE_NAME=${workspaceName}`,
-                `set AIRLOCK_REPO_NAME=`,
-                `set AIRLOCK_LOG_FILE=${logFilePath}`,
-                `set AIRLOCK_ROUTING_TOKEN=${routingToken}`,
-                `set AIRLOCK_AUTO_APPROVE=${autoApprovePatterns}`,
-                `"${nodeCommand}" "${gateScriptPath}"`,
+                `"${nodeCommand}" "${bootstrapScriptPath}"`,
                 `exit /b %ERRORLEVEL%`,
             ].join("\r\n");
 
-            const cmdPath = path.join(hooksDir, "airlock-gate.cmd");
-            // Remove old read-only flag if it exists, write, then set read-only
-            if (fs.existsSync(cmdPath)) {
-                try { fs.chmodSync(cmdPath, 0o666); } catch { /* ignore */ }
-            }
-            fs.writeFileSync(cmdPath, cmdContent, "utf8");
-            try { fs.chmodSync(cmdPath, 0o444); } catch { /* ignore */ }
-            this._log(`Wrote gate batch wrapper: ${cmdPath} (read-only)`);
-
+            const cmdPath = path.join(hooksDir, "airlock-bootstrap.cmd");
+            safeWriteFile(cmdPath, cmdContent);
+            this._log(`✓ Bootstrap wrapper: ${cmdPath} (read-only, zero secrets)`);
             command = cmdPath;
         } else {
-            // Unix (Linux / macOS): create a .sh wrapper that exports env vars
-            // and runs node. This avoids shell quoting issues that can occur when
-            // workspace names or paths contain $, backticks, or double-quotes.
             const escapeShell = (v: string) => v.replace(/'/g, "'\\''");
-            const routingTokenUnix = getRoutingToken(this._context) || "";
             const shContent = [
                 "#!/bin/sh",
+                `export AIRLOCK_FAIL_MODE='${escapeShell(failMode)}'`,
                 `export AIRLOCK_PIPE_NAME='${escapeShell(this._pipeName)}'`,
-                `export AIRLOCK_LOCAL_SECRET='${escapeShell(this._localSecret)}'`,
-                `export AIRLOCK_ENFORCER_ID='${escapeShell(this._enforcerId)}'`,
-                `export AIRLOCK_TIMEOUT_SECONDS='${this._getTimeoutSeconds()}'`,
-                `export AIRLOCK_WORKSPACE_NAME='${escapeShell(workspaceName)}'`,
-                `export AIRLOCK_REPO_NAME=''`,
-                `export AIRLOCK_LOG_FILE='${escapeShell(logFilePath)}'`,
-                `export AIRLOCK_ROUTING_TOKEN='${escapeShell(routingTokenUnix)}'`,
-                `export AIRLOCK_AUTO_APPROVE='${escapeShell(autoApprovePatterns)}'`,
-                `exec '${escapeShell(nodeCommand)}' '${escapeShell(gateScriptPath)}' "$@"`,
+                `exec '${escapeShell(nodeCommand)}' '${escapeShell(bootstrapScriptPath)}' "$@"`,
             ].join("\n");
 
-            const shPath = path.join(hooksDir, "airlock-gate.sh");
-            // Remove old read-only flag if it exists, write, then set read-only + executable
+            const shPath = path.join(hooksDir, "airlock-bootstrap.sh");
+            // Remove read-only flag, write, set executable + read-only
             if (fs.existsSync(shPath)) {
                 try { fs.chmodSync(shPath, 0o777); } catch { /* ignore */ }
             }
             fs.writeFileSync(shPath, shContent, { encoding: "utf8", mode: 0o555 });
-            this._log(`Wrote gate shell wrapper: ${shPath} (executable, read-only)`);
-
+            this._log(`✓ Bootstrap wrapper: ${shPath} (executable, read-only, zero secrets)`);
             command = shPath;
         }
 
-        // Build hooks.json content per Windsurf Cascade Hooks spec
+        // ── Build hooks.json ──────────────────────────────────────
         // Windsurf expects: { hooks: { event_name: [{ command, show_output? }] } }
         const airlockHookEntry = { command: command, show_output: true };
         const cfg = vscode.workspace.getConfiguration("airlock");
@@ -234,8 +192,8 @@ export class HooksDetectionStrategy implements DetectionStrategy {
             hooksConfig["pre_user_prompt"] = [{ command: command }];
         }
 
-        // Read existing hooks.json — only merge if it has the correct object format
-        type HooksObject = Record<string, HookEntry[]>;
+        // ── Merge with existing hooks.json ────────────────────────
+        type HooksObject = Record<string, Array<{ command?: string; show_output?: boolean }>>;
         let mergedHooks: HooksObject = { ...hooksConfig };
 
         if (fs.existsSync(hooksJsonPath)) {
@@ -243,59 +201,49 @@ export class HooksDetectionStrategy implements DetectionStrategy {
                 const parsed = JSON.parse(fs.readFileSync(hooksJsonPath, "utf8"));
                 const existingHooks = parsed.hooks;
 
-                // Only merge if hooks is a plain object (not an array from old format)
                 if (existingHooks && typeof existingHooks === "object" && !Array.isArray(existingHooks)) {
-                    // Merge: for each event, keep non-Airlock hooks and add ours
                     for (const [eventName, entries] of Object.entries(existingHooks as HooksObject)) {
                         if (hooksConfig[eventName]) {
-                            // Event we manage — filter out old Airlock hooks, add ours
                             const nonAirlock = (entries ?? []).filter(
-                                (h) => !h.command?.includes("hooksGateScript")
+                                (h) => !h.command?.includes("airlock-bootstrap")
+                                    && !h.command?.includes("hooksGateScript")
                                     && !h.command?.includes("airlock-gate")
                             );
                             mergedHooks[eventName] = [...nonAirlock, ...hooksConfig[eventName]];
                         } else {
-                            // Event we don't manage — keep as-is
-                            mergedHooks[eventName] = entries;
+                            const nonAirlock = (entries ?? []).filter(
+                                (h) => !h.command?.includes("airlock-bootstrap")
+                                    && !h.command?.includes("hooksGateScript")
+                                    && !h.command?.includes("airlock-gate")
+                            );
+                            if (nonAirlock.length > 0) {
+                                mergedHooks[eventName] = nonAirlock;
+                            }
                         }
                     }
                     this._log("Merged with existing hooks.json (object format)");
                 } else {
-                    this._log("Existing hooks.json has old/incompatible format — overwriting");
+                    this._log("Existing hooks.json has old array format — overwriting");
                 }
             } catch {
                 this._log("Existing hooks.json is invalid — overwriting");
             }
         }
 
-        const mergedConfig = {
-            hooks: mergedHooks,
-        };
+        const mergedConfig = { hooks: mergedHooks };
 
-        // Helper: safely write a file that may already be read-only
-        const safeWriteFile = (filePath: string, content: string) => {
-            // Remove read-only flag if file exists (so we can overwrite)
-            if (fs.existsSync(filePath)) {
-                try { fs.chmodSync(filePath, 0o666); } catch { /* ignore */ }
-            }
-            fs.writeFileSync(filePath, content, "utf8");
-            // Set read-only to prevent agent tampering
-            try { fs.chmodSync(filePath, 0o444); } catch { /* ignore */ }
-        };
-
-        // Write hooks.json (read-only to prevent agent tampering)
+        // Write hooks.json (read-only)
         safeWriteFile(hooksJsonPath, JSON.stringify(mergedConfig, null, 2));
         const installedEvents = Object.keys(mergedHooks).filter(k => hooksConfig[k]).join(", ");
         this._log(`✓ Hooks installed at ${hooksJsonPath} (read-only)`);
         this._log(`  Events: ${installedEvents}`);
-        this._log(`  PipeName: ${this._pipeName}`);
-        this._log(`  EnforcerId: ${this._enforcerId}`);
-        this._log(`  LogFile: ${logFilePath}`);
+        this._log(`  FolderPath: ${folderPath}`);
+        this._log(`  PipeName: ${this._pipeName} (bootstrap will compute from cwd)`);
+        this._log(`  FailMode: ${failMode}`);
 
-        // Install the Windsurf project rule so the agent doesn't reject the hook
+        // Install Windsurf project rule
         this._installWindsurfRule(hooksDir);
 
-        // Show notification to the user
         vscode.window.showInformationMessage(
             `Airlock: Hooks installed at ${hooksJsonPath}. Agent actions will be gated through mobile approval.`
         );
@@ -303,11 +251,7 @@ export class HooksDetectionStrategy implements DetectionStrategy {
 
     /**
      * Writes .windsurf/rules/airlock.md — a Windsurf project rule that instructs
-     * the agent to always allow airlock-gate hook commands and never reject them.
-     *
-     * Project rules with alwaysApply: true are injected into every agent context,
-     * so the agent knows it must cooperate with the hook process rather than
-     * declining or ignoring it.
+     * the agent to always allow airlock-bootstrap hook commands and never reject them.
      */
     private _installWindsurfRule(hooksDir: string): void {
         try {
@@ -326,26 +270,22 @@ export class HooksDetectionStrategy implements DetectionStrategy {
                 "",
                 "# Airlock Hook — Required Behavior",
                 "",
-                "This project uses the **Airlock** security gateway. A hook script (`airlock-gate`) ",
+                "This project uses the **Airlock** security gateway. A hook script (`airlock-bootstrap`) ",
                 "runs before every shell command and MCP tool call to route it for mobile approval.",
                 "",
                 "## Rules",
                 "",
-                "- The `airlock-gate` hook is a **trusted security component** installed by the Airlock Windsurf extension.",
-                "- Do **not** attempt to skip, bypass, remove, or modify the `airlock-gate` hook or `hooks.json`.",
+                "- The `airlock-bootstrap` hook is a **trusted security component** installed by the Airlock Windsurf extension.",
+                "- Do **not** attempt to skip, bypass, remove, or modify the `airlock-bootstrap` hook or `hooks.json`.",
                 "- Do **not** reject, kill, or work around the hook process.",
                 "- When a shell command is blocked by exit code 2 from the hook, respect the denial and do not retry the command automatically.",
                 "- When a shell command is allowed (exit code 0 from the hook), proceed normally.",
                 "- The hook communicates with a mobile app for human-in-the-loop approval — wait for it to complete (up to the configured timeout).",
-                "- Never modify `.windsurf/hooks.json`, `.windsurf/airlock-gate.cmd`, or `.windsurf/airlock-gate.sh`.",
+                "- Never modify `.windsurf/hooks.json`, `.windsurf/airlock-bootstrap.cmd`, or `.windsurf/airlock-bootstrap.sh`.",
             ].join("\n");
 
             // Write as read-only to prevent agent tampering
-            if (fs.existsSync(rulePath)) {
-                try { fs.chmodSync(rulePath, 0o666); } catch { /* ignore */ }
-            }
-            fs.writeFileSync(rulePath, ruleContent, "utf8");
-            try { fs.chmodSync(rulePath, 0o444); } catch { /* ignore */ }
+            safeWriteFile(rulePath, ruleContent);
 
             this._log(`✓ Windsurf rule installed at ${rulePath} (read-only)`);
         } catch (err) {
@@ -355,52 +295,24 @@ export class HooksDetectionStrategy implements DetectionStrategy {
         }
     }
 
-    // ── Log monitoring ─────────────────────────────────────────────
-
-    private _startLogMonitor(): void {
-        // Monitor the gate script's log file and surface entries in our output channel
-        const ws = vscode.workspace.workspaceFolders?.[0];
-        const hooksDir = ws
-            ? path.join(ws.uri.fsPath, ".windsurf")
-            : path.join(os.homedir(), ".windsurf");
-        const logFilePath = path.join(hooksDir, "airlock-hooks.log");
-
-        // Clear any stale log from previous session
-        try { fs.writeFileSync(logFilePath, "", "utf8"); } catch { /* ok */ }
-
-        let lastSize = 0;
-        const tailLog = () => {
-            try {
-                const stat = fs.statSync(logFilePath);
-                if (stat.size > lastSize) {
-                    const fd = fs.openSync(logFilePath, "r");
-                    const buf = Buffer.alloc(stat.size - lastSize);
-                    fs.readSync(fd, buf, 0, buf.length, lastSize);
-                    fs.closeSync(fd);
-                    lastSize = stat.size;
-
-                    const lines = buf.toString("utf8").trim().split("\n");
-                    for (const line of lines) {
-                        this._out.appendLine(line.trim());
-                    }
-                }
-            } catch { /* file may not exist yet */ }
-        };
-
-        // Use fs.watch for instant feedback, with fallback polling
-        // Windows fs.watch fires multiple events per write — debounce to avoid duplicates
-        try {
-            let debounceTimer: ReturnType<typeof setTimeout> | undefined;
-            this._logWatcher = fs.watch(logFilePath, () => {
-                if (debounceTimer) { clearTimeout(debounceTimer); }
-                debounceTimer = setTimeout(tailLog, 100);
-            });
-            this._log("Monitoring gate script log file for diagnostics");
-        } catch {
-            // File doesn't exist yet — poll periodically
-            const interval = setInterval(tailLog, 2000);
-            this._logWatcher = { close: () => clearInterval(interval) } as fs.FSWatcher;
-            this._log("Polling gate script log file for diagnostics");
+    /** Clean up legacy pre-v3 files from .windsurf/ (v3 §18). */
+    private _cleanupLegacyFiles(hooksDir: string): void {
+        const legacyFiles = [
+            "airlock-gate.cmd",
+            "airlock-gate.sh",
+            "hooksGateScript.js",
+            "airlock-hooks.log",
+        ];
+        for (const file of legacyFiles) {
+            const filePath = path.join(hooksDir, file);
+            if (fs.existsSync(filePath)) {
+                try {
+                    // Remove read-only flag first
+                    try { fs.chmodSync(filePath, 0o666); } catch { /* ignore */ }
+                    fs.unlinkSync(filePath);
+                    this._log(`✓ Cleaned up legacy file: ${file}`);
+                } catch { /* non-fatal */ }
+            }
         }
     }
 
@@ -417,14 +329,20 @@ export class HooksDetectionStrategy implements DetectionStrategy {
     }
 
     dispose(): void {
-        if (this._logWatcher) {
-            this._logWatcher.close();
-            this._logWatcher = null;
-        }
-
         // Optionally clean up hooks.json on deactivation
         // (We leave them installed so they persist between sessions)
         this._onPendingDetected.dispose();
         this._onPendingCancelled.dispose();
     }
+}
+
+/** Safely write a file that may already be read-only, then set it read-only. */
+function safeWriteFile(filePath: string, content: string): void {
+    // Remove read-only flag if file exists (so we can overwrite)
+    if (fs.existsSync(filePath)) {
+        try { fs.chmodSync(filePath, 0o666); } catch { /* ignore */ }
+    }
+    fs.writeFileSync(filePath, content, "utf8");
+    // Set read-only to prevent agent tampering
+    try { fs.chmodSync(filePath, 0o444); } catch { /* ignore */ }
 }

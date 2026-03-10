@@ -2,7 +2,7 @@
     "name": "airlock-antigravity-enforcer",
     "displayName": "Airlock Antigravity Enforcer",
     "description": "Airlock enforcement layer for Antigravity — gates agent/terminal commands through mobile approval",
-    "version": "0.2.1",
+    "version": "0.3.0",
     "publisher": "out-of-band-systems",
     "license": "MIT",
     "icon": "images/icon.png",
@@ -39,8 +39,8 @@
                 "title": "Airlock: Show Status"
             },
             {
-                "command": "airlock.configureEndpoint",
-                "title": "Airlock: Configure Endpoint"
+                "command": "airlock.configureGateway",
+                "title": "Airlock: Configure Gateway"
             },
             {
                 "command": "airlock.relaunch",
@@ -114,12 +114,20 @@
                     "default": 60,
                     "description": "Timeout in seconds for waiting for mobile approval."
                 },
-                "airlock.approvalEndpoint": {
+                "airlock.gatewayUrl": {
                     "type": "string",
                     "default": "",
-                    "description": "Airlock approval endpoint URL (e.g. http://127.0.0.1:7771). If empty, auto-discovery is used."
+                    "description": "Airlock Gateway URL (e.g. http://127.0.0.1:7771). Used only in dev builds. If empty, auto-discovery is used."
                 }
             }
+        },
+        "menus": {
+            "commandPalette": [
+                {
+                    "command": "airlock.configureGateway",
+                    "when": "airlock.isDevBuild"
+                }
+            ]
         }
     },
     "scripts": {

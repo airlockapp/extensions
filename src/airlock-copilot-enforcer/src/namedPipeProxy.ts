@@ -1,73 +1,134 @@
 /**
- * Named Pipe Proxy for secure gate script ↔ extension IPC.
+ * Named Pipe Proxy — Trusted Security Boundary (v3 Architecture)
  *
- * Architecture:
- *   Extension starts a named pipe server on activate().
- *   The gate script (hooksGateScript.js) connects via the pipe and sends an
- *   HTTP-like request envelope. The proxy:
- *     1. Validates the local secret (prevents other processes from injecting requests)
- *     2. Gets a fresh JWT from deviceAuth.ensureFreshToken()
- *     3. Forwards the request to the gateway with Bearer token
- *     4. On gateway 401: refreshes token and retries once
- *     5. Returns response to gate script
- *     6. On any auth failure: returns 503 → gate script fails OPEN
+ * This is the core security runtime for Airlock hook enforcement.
+ * All decision logic lives here — the bootstrap script in .github/hooks/
+ * is transport-only and contains zero secrets.
  *
- * Isolation: each extension instance uses enforcerId as part of the pipe name,
- * so multiple windows/instances of the same enforcer never collide.
+ * Architecture (v3 §2):
+ *   Bootstrap (transport) → Named Pipe → THIS MODULE (security boundary)
+ *     → Gateway → Approver → Allow / Deny
  *
- * Fail modes (all fail OPEN per policy):
- *   - AIRLOCK_PIPE_NAME missing → gate uses no-auth code path → allow
- *   - AIRLOCK_LOCAL_SECRET missing → gate uses no-auth code path → allow
- *   - Proxy connection refused → gate allows (extension not running)
- *   - Proxy returns 503 → gate allows (extension not signed in / refresh failed)
+ * Responsibilities:
+ *   1. Receive JSON hook requests from bootstrap via named pipe
+ *   2. Validate protocol version (v3.1 §5)
+ *   3. Enforce payload size limits (v3.1 §6)
+ *   4. Self-protection: block access to Airlock files
+ *   5. Auto-approve pattern matching
+ *   6. Build HARP artifact envelope
+ *   7. Encrypt payloads (zero-knowledge gateway)
+ *   8. Submit to gateway and poll for decision
+ *   9. Apply fail mode policy (failClosed/failOpen)
+ *   10. Return allow/deny decision to bootstrap
  *
- * Fail CLOSED:
- *   - Proxy returns 401 → wrong local secret → gate blocks (security violation)
- *   - Proxy returns 403 → pairing_revoked → gate blocks
+ * Security:
+ *   - Unix socket: chmod 0600 after creation (v3.1 §2.1)
+ *   - Pipe collision handling (v3.1 §3.1)
+ *   - Per-workspace pipe isolation via workspace hash (v3 §5-6)
  */
 
 import * as net from 'net';
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import type { DeviceAuth } from './deviceAuth.js';
-import { encryptPayload } from './crypto.js';
+import { encryptPayload, type EncryptedPayload } from './crypto.js';
+
+// ── Constants ────────────────────────────────────────────────────────────────
+const SUPPORTED_PROTOCOL_VERSION = 1;
+const MAX_PAYLOAD_BYTES = 1 * 1024 * 1024; // 1 MB (v3.1 §6)
+const POLL_INTERVAL_SEC = 25;
+
+// Protected Airlock files — self-protection (moved from gate script)
+const PROTECTED_FILES = [
+    "airlock.json", "airlock-bootstrap.cmd", "airlock-bootstrap.sh",
+    "airlock-bootstrap.js", "airlock-gate.cmd", "airlock-gate.sh",
+    "hooksGateScript.js", "airlock-hooks.log", "airlock.md",
+];
+
+// Terminal tools — Copilot uses tool_name to identify the tool type
+const TERMINAL_TOOLS = ["bash", "runcommand", "run_command", "terminal", "shell"];
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+/** JSON request from bootstrap (v3 §12) */
+interface HookRequest {
+    kind: "hook_request";
+    protocolVersion: number;
+    workspaceHash: string;
+    cwdFolderName?: string;
+    payload: Record<string, unknown>;
+}
+
+/** JSON response to bootstrap (v3 §12) */
+interface HookResponse {
+    permission: "allow" | "deny";
+    message?: string;
+    agentMessage?: string;
+}
 
 export interface ProxyOptions {
     enforcerId: string;
     gatewayUrl: string;
-    localSecret: string;  // random per-session secret, written to wrapper script
-    auth: () => DeviceAuth | undefined;  // lazy getter so extension.ts can reassign deviceAuth
-    getEncryptionKey: () => Promise<string | null>;  // lazy getter for E2E encryption key from SecretStorage
+    workspaceName: string;
+    repoName: string;
+    failMode: "failClosed" | "failOpen";
+    autoApprovePatterns: string[];
+    auth: () => DeviceAuth | undefined;
+    getEncryptionKey: () => Promise<string | null>;
+    getRoutingToken: () => string | null;
+    timeoutSeconds: number;
+    /** Always-on log for essential events (decisions, errors, auth state). */
     log: (msg: string) => void;
-    onQuotaExceeded?: (errorCode: string) => void;  // called when gateway returns quota error (403 quota/429)
+    /** Verbose log gated behind diagnosticMode setting. */
+    logDiag: (msg: string) => void;
+    onQuotaExceeded?: (errorCode: string) => void;
 }
 
 export class NamedPipeProxy {
     private _server: net.Server | null = null;
     private readonly _pipeName: string;
+    private _opts: ProxyOptions;
 
-    constructor(private readonly _opts: ProxyOptions) {
-        this._pipeName = NamedPipeProxy.getPipeName(_opts.enforcerId);
+    constructor(opts: ProxyOptions, pipeName: string) {
+        this._opts = opts;
+        this._pipeName = pipeName;
     }
 
-    /** Returns the pipe name for a given enforcerId. */
-    static getPipeName(enforcerId: string): string {
-        // Windows: \\.\pipe\airlock-<id>
-        // Unix:    /tmp/airlock-<id>.sock  (length ≤ 104 chars on macOS/Linux)
+    /** Update options at runtime (e.g., when config changes). */
+    updateOptions(updates: Partial<ProxyOptions>): void {
+        this._opts = { ...this._opts, ...updates };
+    }
+
+    get pipeName(): string { return this._pipeName; }
+
+    // ── Workspace hash (v3 §5) ──────────────────────────────────────────────
+
+    /** Compute deterministic workspace hash per v3 §5. */
+    static computeWorkspaceHash(workspacePath: string): string {
+        let normalized = path.resolve(workspacePath);
         if (process.platform === 'win32') {
-            return `\\\\.\\pipe\\airlock-${enforcerId}`;
+            normalized = normalized.toLowerCase();
         }
-        // Truncate enforcerId to stay within Unix socket path limit
-        return `/tmp/airlock-${enforcerId.slice(0, 40)}.sock`;
+        const digest = crypto.createHash('sha256').update(normalized).digest('hex');
+        return digest.substring(0, 16);
     }
+
+    /** Returns the pipe name for a given workspace hash (v3 §6). */
+    static getPipeName(workspaceHash: string): string {
+        if (process.platform === 'win32') {
+            return `\\\\.\\pipe\\airlock-ws-${workspaceHash}`;
+        }
+        return `/tmp/airlock-ws-${workspaceHash}.sock`;
+    }
+
+    // ── Server lifecycle (v3 §7) ────────────────────────────────────────────
 
     /** Starts the named pipe server. Resolves when listening. */
     async start(): Promise<void> {
-        // Remove stale Unix socket
+        // Collision handling on Unix (v3.1 §3.1)
         if (process.platform !== 'win32') {
-            try {
-                const { unlink } = await import('fs/promises');
-                await unlink(this._pipeName);
-            } catch { /* fine — file may not exist */ }
+            await this._handleSocketCollision();
         }
 
         this._server = net.createServer((socket) => {
@@ -76,150 +137,376 @@ export class NamedPipeProxy {
 
         await new Promise<void>((resolve, reject) => {
             this._server!.listen(this._pipeName, () => {
-                this._opts.log(`✓ Named pipe proxy listening at ${this._pipeName}`);
+                this._opts.logDiag(`✓ Pipe server listening at ${this._pipeName}`);
                 resolve();
             });
             this._server!.on('error', reject);
         });
+
+        // Unix socket permissions: chmod 0600 (v3.1 §2.1)
+        if (process.platform !== 'win32') {
+            try {
+                fs.chmodSync(this._pipeName, 0o600);
+                this._opts.logDiag('✓ Socket permissions set to 0600 (owner only)');
+            } catch (err) {
+                this._opts.log(`⚠ Failed to set socket permissions: ${err}`);
+            }
+        }
     }
 
-    /** Stops the server. */
+    /** Stops the server and cleans up socket file. */
     stop(): void {
         this._server?.close();
         this._server = null;
-        this._opts.log('Named pipe proxy stopped');
+        // Cleanup Unix socket file (v3 §7)
+        if (process.platform !== 'win32') {
+            try { fs.unlinkSync(this._pipeName); } catch { /* fine */ }
+        }
+        this._opts.logDiag('Pipe server stopped');
     }
 
-    // ── Connection handler ───────────────────────────────────────────────
+    // ── Collision handling (v3.1 §3.1) ──────────────────────────────────────
+
+    private async _handleSocketCollision(): Promise<void> {
+        try {
+            fs.accessSync(this._pipeName);
+        } catch {
+            return; // No existing socket
+        }
+
+        this._opts.logDiag('Existing socket found — testing if active...');
+
+        const isActive = await new Promise<boolean>((resolve) => {
+            const testSocket = net.createConnection(this._pipeName, () => {
+                testSocket.destroy();
+                resolve(true);
+            });
+            testSocket.on('error', () => resolve(false));
+            testSocket.setTimeout(300, () => {
+                testSocket.destroy();
+                resolve(false);
+            });
+        });
+
+        if (isActive) {
+            this._opts.logDiag('⚠ Active runtime detected on existing socket — reusing');
+            throw new Error('Another Airlock runtime is already active for this workspace');
+        }
+
+        try {
+            fs.unlinkSync(this._pipeName);
+            this._opts.logDiag('Deleted stale socket file');
+        } catch { /* fine */ }
+    }
+
+    // ── Connection handler ──────────────────────────────────────────────────
 
     private _handleConnection(socket: net.Socket): void {
         let rawData = '';
+        let totalBytes = 0;
         socket.setEncoding('utf8');
-        this._opts.log('Named pipe: new connection received');
 
-        socket.on('data', (chunk) => {
+        socket.on('data', (chunk: string) => {
+            totalBytes += Buffer.byteLength(chunk, 'utf8');
+
+            // Payload size limit (v3.1 §6)
+            if (totalBytes > MAX_PAYLOAD_BYTES) {
+                this._opts.log(`⚠ Payload exceeds ${MAX_PAYLOAD_BYTES} bytes — rejecting`);
+                this._sendResponse(socket, { permission: 'deny', message: 'Payload too large' });
+                return;
+            }
+
             rawData += chunk;
-            // Simple framing: wait for \n\n (end of "headers") + content-length body
-            if (rawData.includes('\n\n')) {
-                this._processRequest(socket, rawData).catch((err) => {
-                    this._opts.log(`Named pipe: request processing error: ${err}`);
-                    this._sendError(socket, 500, 'internal_error');
+            const nlIdx = rawData.indexOf('\n');
+            if (nlIdx >= 0) {
+                const jsonStr = rawData.substring(0, nlIdx);
+                this._processRequest(socket, jsonStr).catch((err) => {
+                    this._opts.log(`Request processing error: ${err}`);
+                    this._sendResponse(socket, { permission: 'deny', message: 'Internal error' });
                 });
             }
         });
 
         socket.on('error', (err) => {
-            this._opts.log(`Named pipe: socket error: ${err.message}`);
+            this._opts.log(`Socket error: ${err.message}`);
         });
     }
 
+    // ── Request processing (v3 §13) ─────────────────────────────────────────
+
     private async _processRequest(socket: net.Socket, raw: string): Promise<void> {
-        const [headerSection, ...bodyParts] = raw.split('\n\n');
-        const body = bodyParts.join('\n\n');
-
-        // Parse pseudo-HTTP headers: KEY: value
-        const headers: Record<string, string> = {};
-        for (const line of headerSection.split('\n')) {
-            const idx = line.indexOf(': ');
-            if (idx > 0) {
-                headers[line.slice(0, idx).toLowerCase()] = line.slice(idx + 2).trim();
-            }
-        }
-
-        const method = (headers['x-airlock-method'] || 'POST').toUpperCase();
-        const path = headers['x-airlock-path'] || '/v1/artifacts';
-        this._opts.log(`Named pipe: request ${method} ${path} (body=${body.length} bytes)`);
-
-        // 1. Validate local secret (FAIL CLOSED — wrong secret = block)
-        if (headers['x-airlock-secret'] !== this._opts.localSecret) {
-            this._opts.log('⚠ Named pipe: wrong local secret — rejecting');
-            this._sendError(socket, 401, 'wrong_secret');
+        // 1. Parse JSON request
+        let request: HookRequest;
+        try {
+            request = JSON.parse(raw);
+        } catch {
+            this._sendResponse(socket, { permission: 'deny', message: 'Invalid JSON request' });
             return;
         }
 
-        // 2. Check if signed in (FAIL OPEN — not signed in = allow)
+        // 2. Validate request structure
+        if (request.kind !== 'hook_request') {
+            this._sendResponse(socket, { permission: 'deny', message: 'Unknown request kind' });
+            return;
+        }
+
+        // 3. Protocol version validation (v3.1 §5)
+        if (request.protocolVersion !== SUPPORTED_PROTOCOL_VERSION) {
+            this._opts.log(`⚠ Protocol version mismatch: got ${request.protocolVersion}, expected ${SUPPORTED_PROTOCOL_VERSION}`);
+            this._sendResponse(socket, { permission: 'deny', message: 'Incompatible protocol version' });
+            return;
+        }
+
+        const payload = request.payload || {};
+
+        // Log raw payload keys for diagnostics
+        this._opts.logDiag(`Hook request: protocolVersion=${request.protocolVersion} wsHash=${request.workspaceHash} payloadKeys=[${Object.keys(payload).join(',')}]`);
+
+        // Repo name comes from extension config (workspace name or folder name)
+        const effectiveRepoName = this._opts.repoName;
+        this._opts.logDiag(`  repoName=${effectiveRepoName}`);
+
+        // 4. Normalize Copilot payload fields
+        const normalizedPayload = this._normalizePayload(payload);
+        const event = normalizedPayload.event as string || 'unknown';
+        const commandLine = (normalizedPayload.command || normalizedPayload.toolName || '') as string;
+        const filePath = ((normalizedPayload.filePath || normalizedPayload.file_path || normalizedPayload.path || '') as string)
+            .replace(/\\/g, '/').toLowerCase();
+
+        this._opts.log(`Event: ${event} | Action: ${commandLine || filePath || '?'}`);
+
+        // 5. Self-protection: block tampering with Airlock files
+        const cmdLower = commandLine.toLowerCase();
+        const toolInputStr = (typeof normalizedPayload.input === 'string'
+            ? normalizedPayload.input
+            : JSON.stringify(normalizedPayload.input || '')).toLowerCase();
+
+        if (PROTECTED_FILES.some(p => {
+            const pLower = p.toLowerCase();
+            return filePath.includes(pLower) || cmdLower.includes(pLower) || toolInputStr.includes(pLower);
+        })) {
+            this._sendResponse(socket, {
+                permission: 'deny',
+                message: 'Access to protected Airlock files is blocked',
+                agentMessage: 'You cannot modify Airlock configuration files (airlock.json, airlock-bootstrap.*, etc). These files are protected.',
+            });
+            return;
+        }
+
+        if (commandLine && this._isAutoApproved(commandLine)) {
+            this._opts.log(`AUTO-APPROVED: "${commandLine}" matches auto-approve pattern`);
+            this._sendResponse(socket, { permission: 'allow' });
+            return;
+        }
+
         const auth = this._opts.auth();
-        this._opts.log(`Named pipe: auth present=${!!auth}, hasToken=${!!auth?.token}`);
         const token = await auth?.ensureFreshToken();
         if (!token) {
-            this._opts.log('Named pipe: not signed in — returning 503 (gate will fail open)');
-            this._sendError(socket, 503, 'not_authenticated');
+            this._opts.log('Not signed in — applying fail mode');
+            this._sendResponse(socket, this._getFailModeResponse('User not signed in'));
             return;
         }
-        this._opts.log(`Named pipe: auth token obtained (${token.slice(0, 10)}...)`);
 
-        // 3. Encrypt plaintext payloads from hooks scripts (HARP-GW §2.1: zero-knowledge gateway)
-        let forwardBody = body;
-        if (method === 'POST' && path === '/v1/artifacts' && body) {
-            try {
-                const parsed = JSON.parse(body);
-                if (parsed?.body?.ciphertext?.alg === 'none') {
-                    const encKey = await this._opts.getEncryptionKey();
-                    if (encKey) {
-                        const plaintextData = parsed.body.ciphertext.data;
-                        const encrypted = encryptPayload(plaintextData, encKey);
-                        parsed.body.ciphertext = encrypted;
-                        forwardBody = JSON.stringify(parsed);
-                        this._opts.log('Named pipe: encrypted plaintext payload from hooks script');
-                    } else {
-                        this._opts.log('Named pipe: no encryption key — rejecting plaintext artifact (pair device first)');
-                        this._sendError(socket, 403, 'encryption_key_missing');
-                        return;
-                    }
-                }
-            } catch (e) {
-                this._opts.log(`Named pipe: body parse/encrypt error: ${e}`);
-            }
+        const routingToken = this._opts.getRoutingToken();
+        if (!routingToken) {
+            this._opts.log('Not paired — applying fail mode');
+            this._sendResponse(socket, this._getFailModeResponse('Workspace not paired'));
+            return;
         }
 
-        // 4. Forward to gateway
-        const gatewayUrl = `${this._opts.gatewayUrl}${path}`;
-        this._opts.log(`Named pipe: forwarding to ${gatewayUrl}`);
+        // 9. Build HARP artifact envelope
+        const requestId = `req-${crypto.randomUUID()}`;
+        const msgId = `msg-${crypto.randomUUID()}`;
+        const toolName = (normalizedPayload.toolName || '') as string;
+        const actionType = TERMINAL_TOOLS.includes(toolName.toLowerCase()) ? 'terminal_command' : 'agent_step';
 
-        const response = await this._forwardToGateway(method, gatewayUrl, token, forwardBody);
-        this._opts.log(`Named pipe: gateway responded ${response.status} (${response.body.length} bytes)`);
+        const plaintextContent = JSON.stringify({
+            actionType,
+            commandText: commandLine,
+            buttonText: this._buildDescription(normalizedPayload),
+            workspace: this._opts.workspaceName,
+            repoName: effectiveRepoName,
+            source: 'copilot-hooks',
+            hookEvent: event,
+            toolName: toolName || undefined,
+            toolInput: normalizedPayload.input
+                ? JSON.stringify(normalizedPayload.input).substring(0, 500)
+                : undefined,
+        });
 
-        // 5. On 401: refresh + retry once
-        if (response.status === 401) {
-            this._opts.log('Named pipe: got 401 from gateway, refreshing token...');
-            const auth = this._opts.auth();
-            const refreshed = auth ? await auth.refresh() : false;
-            this._opts.log(`Named pipe: refresh result=${refreshed}`);
-            if (refreshed && auth?.token) {
-                const retry = await this._forwardToGateway(method, gatewayUrl, auth.token, forwardBody);
-                this._opts.log(`Named pipe: retry responded ${retry.status}`);
-                this._sendResponse(socket, retry.status, retry.body);
+        // 10. Encrypt payload (zero-knowledge gateway)
+        let ciphertext: EncryptedPayload | { alg: string; data: string } = { alg: 'none', data: plaintextContent };
+        const encKey = await this._opts.getEncryptionKey();
+        if (encKey) {
+            try {
+                ciphertext = encryptPayload(plaintextContent, encKey);
+                this._opts.logDiag('Encrypted payload for zero-knowledge gateway');
+            } catch (e) {
+                this._opts.log(`Encryption error: ${e}`);
+            }
+        } else {
+            this._opts.log('No encryption key — sending plaintext (pair device first)');
+            this._sendResponse(socket, {
+                permission: 'deny',
+                message: 'Encryption key missing — pair your device first',
+            });
+            return;
+        }
+
+        const envelope = {
+            msgId,
+            msgType: 'artifact.submit',
+            requestId,
+            createdAt: new Date().toISOString(),
+            sender: { enforcerId: this._opts.enforcerId },
+            body: {
+                artifactType: 'command-approval',
+                artifactHash: crypto.createHash('sha256')
+                    .update(`${actionType}:${commandLine}:${Date.now()}`)
+                    .digest('hex'),
+                ciphertext,
+                expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+                metadata: {
+                    repoName: effectiveRepoName,
+                    workspaceName: this._opts.workspaceName,
+                    routingToken,
+                },
+            },
+        };
+
+        // 11. Submit to gateway
+        this._opts.logDiag(`Submitting artifact (requestId=${requestId})`);
+        const submitResult = await this._forwardToGateway(
+            'POST', '/v1/artifacts', token, JSON.stringify(envelope)
+        );
+
+        if (submitResult.status === 503) {
+            this._opts.log('Gateway unreachable — applying fail mode');
+            this._sendResponse(socket, this._getFailModeResponse('Gateway unreachable'));
+            return;
+        }
+        if (submitResult.status === 429 || submitResult.status === 403) {
+            const errorCode = this._parseErrorCode(submitResult.body);
+            const quotaCodes = ['quota_exceeded', 'workspace_limit_reached', 'approver_limit_reached'];
+            if (submitResult.status === 429 || quotaCodes.includes(errorCode)) {
+                this._opts.onQuotaExceeded?.(errorCode || 'quota_exceeded');
+                this._sendResponse(socket, this._getFailModeResponse(`Quota exceeded (${errorCode})`));
                 return;
             }
-            // Refresh failed — fail open
-            this._opts.log('Named pipe: refresh failed — returning 503 (gate will fail open)');
-            this._sendError(socket, 503, 'refresh_failed');
+            this._sendResponse(socket, {
+                permission: 'deny',
+                message: `Access denied: ${errorCode || 'pairing revoked'}`,
+            });
+            return;
+        }
+        if (submitResult.status === 401) {
+            // Try refresh + retry once
+            this._opts.log('Gateway 401 — refreshing token...');
+            const refreshed = auth ? await auth.refresh() : false;
+            if (refreshed && auth?.token) {
+                const retry = await this._forwardToGateway(
+                    'POST', '/v1/artifacts', auth.token, JSON.stringify(envelope)
+                );
+                if (retry.status < 200 || retry.status >= 300) {
+                    this._sendResponse(socket, this._getFailModeResponse('Gateway auth failed after refresh'));
+                    return;
+                }
+            } else {
+                this._sendResponse(socket, this._getFailModeResponse('Token refresh failed'));
+                return;
+            }
+        }
+        if (submitResult.status < 200 || submitResult.status >= 300) {
+            this._sendResponse(socket, {
+                permission: 'deny',
+                message: `Gateway error: ${submitResult.status}`,
+            });
             return;
         }
 
-        // 6. Detect quota responses and notify extension for status bar update
-        if (response.status === 429 || response.status === 403) {
+        this._opts.logDiag(`Artifact accepted (${submitResult.status}). Polling for decision...`);
+
+        // 12. Poll for decision
+        const decision = await this._pollForDecision(requestId, token);
+        this._sendResponse(socket, decision);
+    }
+
+    // ── Decision polling ────────────────────────────────────────────────────
+
+    private async _pollForDecision(requestId: string, token: string): Promise<HookResponse> {
+        const deadline = Date.now() + this._opts.timeoutSeconds * 1000;
+        let pollCount = 0;
+
+        while (Date.now() < deadline) {
+            pollCount++;
+            const remainingSec = Math.ceil((deadline - Date.now()) / 1000);
+            const serverTimeout = Math.min(POLL_INTERVAL_SEC, remainingSec);
+            if (serverTimeout <= 0) { break; }
+
+            const waitPath = `/v1/exchanges/${requestId}/wait?timeout=${serverTimeout}`;
+            this._opts.logDiag(`Poll ${pollCount}: waiting up to ${serverTimeout}s...`);
+
             try {
-                const parsed = JSON.parse(response.body);
-                const errorCode = parsed?.error || '';
-                const quotaCodes = ['quota_exceeded', 'workspace_limit_reached', 'approver_limit_reached'];
-                if (response.status === 429 || quotaCodes.includes(errorCode)) {
-                    this._opts.onQuotaExceeded?.(errorCode || 'quota_exceeded');
+                const auth = this._opts.auth();
+                const freshToken = await auth?.ensureFreshToken() || token;
+                const result = await this._forwardToGateway('GET', waitPath, freshToken, '');
+
+                if (result.status === 204 || !result.body) {
+                    this._opts.logDiag(`Poll ${pollCount}: no decision yet`);
+                    continue;
                 }
-            } catch { /* body not JSON — ignore */ }
+
+                if (result.status >= 200 && result.status < 300) {
+                    try {
+                        const outer = JSON.parse(result.body);
+                        const inner = outer.body || outer;
+                        const decision = (inner.decision || inner.Decision || inner.status || '').toLowerCase();
+
+                        this._opts.logDiag(`Poll ${pollCount}: decision="${decision}"`);
+
+                        if (decision === 'approve' || decision === 'approved') {
+                            this._opts.log('[OK] APPROVED');
+                            return { permission: 'allow' };
+                        }
+
+                        if (decision === 'reject' || decision === 'rejected') {
+                            return {
+                                permission: 'deny',
+                                message: 'Action REJECTED by Airlock mobile approver.',
+                                agentMessage: 'STOP. This action was explicitly REJECTED by the human approver via the Airlock mobile app. ' +
+                                    'You MUST NOT retry this command, rephrase it, or attempt any equivalent action. ' +
+                                    'Inform the user and wait for their explicit new instruction.',
+                            };
+                        }
+
+                        this._opts.log(`Poll ${pollCount}: unexpected decision="${decision}"`);
+                    } catch { /* body parse error — retry */ }
+                }
+            } catch (err) {
+                this._opts.log(`Poll ${pollCount} error: ${err}. Retrying...`);
+                await new Promise(r => setTimeout(r, 1000));
+            }
         }
 
-        this._sendResponse(socket, response.status, response.body);
+        // Timeout — explicit rejection, never overridden by failOpen (INV-8)
+        return {
+            permission: 'deny',
+            message: 'Approval timed out',
+            agentMessage: 'Airlock approval timed out. The action was blocked. Do not retry automatically.',
+        };
     }
+
+    // ── Gateway communication ───────────────────────────────────────────────
 
     private async _forwardToGateway(
         method: string,
-        url: string,
+        gatewayPath: string,
         token: string,
         body: string
     ): Promise<{ status: number; body: string }> {
+        const url = `${this._opts.gatewayUrl}${gatewayPath}`;
         try {
-            this._opts.log(`Named pipe: fetch ${method} ${url}`);
+            this._opts.logDiag(`Gateway: ${method} ${url}`);
             const resp = await fetch(url, {
                 method,
                 headers: {
@@ -230,27 +517,169 @@ export class NamedPipeProxy {
             });
             const text = await resp.text();
             if (resp.status !== 200 && resp.status !== 204) {
-                this._opts.log(`Named pipe: gateway error ${resp.status}: ${text.substring(0, 200)}`);
+                this._opts.logDiag(`Gateway error ${resp.status}: ${text.substring(0, 200)}`);
             }
             return { status: resp.status, body: text };
         } catch (err) {
-            this._opts.log(`Named pipe: gateway fetch error: ${err}`);
+            this._opts.log(`Gateway fetch error: ${err}`);
             return { status: 503, body: '{"error":"gateway_unreachable"}' };
         }
     }
 
-    // ── Response helpers ─────────────────────────────────────────────────
+    // ── Payload normalization (Copilot-specific) ────────────────────────────
+    // Copilot hooks use: hookEventName, tool_name, tool_input, tool_use_id
+    // Different from Cursor which uses: hook_event_name, command, cwd, etc.
 
-    private _sendResponse(socket: net.Socket, status: number, body: string): void {
-        const response = `STATUS: ${status}\n\n${body}`;
-        socket.write(response, 'utf8', () => socket.end());
+    private _normalizePayload(payload: Record<string, unknown>): Record<string, unknown> {
+        const p = { ...payload };
+
+        // Use Copilot's hookEventName as primary event source
+        if (!p.event && p.hookEventName) {
+            p.event = p.hookEventName;
+        }
+        if (!p.event && p.hook_event_name) {
+            p.event = p.hook_event_name;
+        }
+
+        // Normalize Copilot-style field names
+        if (!p.toolName && p.tool_name) { p.toolName = p.tool_name; }
+        if (!p.input && p.tool_input) {
+            if (typeof p.tool_input === 'string') {
+                try { p.input = JSON.parse(p.tool_input as string); } catch { p.input = p.tool_input; }
+            } else {
+                p.input = p.tool_input;
+            }
+        }
+        if (!p.filePath && p.file_path) { p.filePath = p.file_path; }
+
+        // Derive command from tool_input for terminal tools
+        const toolName = ((p.toolName || '') as string).toLowerCase();
+        if (TERMINAL_TOOLS.includes(toolName) && typeof p.input === 'object' && p.input !== null) {
+            const input = p.input as Record<string, unknown>;
+            if (!p.command) {
+                p.command = input.command || input.command_line || '';
+            }
+        }
+
+        // Extract file path from tool input if not set
+        if (!p.filePath && typeof p.input === 'object' && p.input !== null) {
+            const input = p.input as Record<string, unknown>;
+            p.filePath = input.file_path || input.path || input.filePath || '';
+        }
+
+        return p;
     }
 
-    private _sendError(socket: net.Socket, status: number, code: string): void {
-        this._sendResponse(socket, status, JSON.stringify({ error: code }));
+    // ── Description builder (Copilot-specific) ──────────────────────────────
+    // Branches on tool_name which is how Copilot identifies the tool being called.
+    // Common tool names: bash, editFiles, readFile, listFiles, searchFiles, etc.
+
+    private _buildDescription(payload: Record<string, unknown>): string {
+        const toolName = ((payload.toolName || payload.tool_name || '') as string).toLowerCase();
+        const input = (typeof payload.input === 'object' && payload.input !== null)
+            ? payload.input as Record<string, unknown> : {};
+
+        // Terminal / shell commands
+        if (TERMINAL_TOOLS.includes(toolName)) {
+            const cmd = (input.command || input.command_line || '(unknown)') as string;
+            const cwd = input.cwd ? ` (cwd: ${input.cwd})` : '';
+            return `Terminal: ${cmd}${cwd}`;
+        }
+
+        // File editing tools
+        if (['editfiles', 'edit_file', 'write_file', 'create_file', 'insertcode', 'replacecode'].includes(toolName)) {
+            const fp = (input.file_path || input.path || input.filePath || '(unknown)') as string;
+            return `Edit file: ${fp}`;
+        }
+
+        // File reading tools
+        if (['readfile', 'read_file', 'viewfile'].includes(toolName)) {
+            const fp = (input.file_path || input.path || input.filePath || '(unknown)') as string;
+            return `Read file: ${fp}`;
+        }
+
+        // File listing / search
+        if (['listfiles', 'list_dir', 'searchfiles', 'grep', 'find'].includes(toolName)) {
+            const dir = (input.directory || input.path || input.query || '(unknown)') as string;
+            return `${payload.toolName || toolName}: ${dir}`;
+        }
+
+        // Generic tool with name
+        if (toolName) {
+            const summary = JSON.stringify(input).substring(0, 150);
+            return `Tool: ${payload.toolName || toolName} — ${summary}`;
+        }
+
+        // Fallback
+        const event = (payload.event || payload.hookEventName || 'unknown') as string;
+        return `Hook: ${event}`;
     }
 
-    // ── Static helpers ───────────────────────────────────────────────────
+    // ── Auto-approve matching (moved from gate script) ───────────────────────
+
+    private _isAutoApproved(commandText: string): boolean {
+        const patterns = this._opts.autoApprovePatterns;
+        if (!patterns || patterns.length === 0) { return false; }
+
+        const lower = commandText.toLowerCase();
+        for (const pattern of patterns) {
+            const p = pattern.trim();
+            if (!p) { continue; }
+            try {
+                if (p.startsWith('/') && p.lastIndexOf('/') > 0) {
+                    const last = p.lastIndexOf('/');
+                    const re = new RegExp(p.substring(1, last), p.substring(last + 1) || 'i');
+                    if (re.test(commandText)) { return true; }
+                } else if (lower.includes(p.toLowerCase())) {
+                    return true;
+                }
+            } catch {
+                if (lower.includes(p.toLowerCase())) { return true; }
+            }
+        }
+        return false;
+    }
+
+    // ── Fail mode (v3 §14-15) ───────────────────────────────────────────────
+
+    /** Returns a fail-mode response without sending (used by sendAndResolve dedup). */
+    private _getFailModeResponse(reason: string): HookResponse {
+        if (this._opts.failMode === 'failOpen') {
+            this._opts.log(`${reason} — allowing (failOpen)`);
+            return { permission: 'allow' };
+        } else {
+            this._opts.log(`${reason} — denying (failClosed)`);
+            return { permission: 'deny', message: reason };
+        }
+    }
+
+    private _applyFailMode(socket: net.Socket, reason: string): void {
+        if (this._opts.failMode === 'failOpen') {
+            this._opts.log(`${reason} — allowing (failOpen)`);
+            this._sendResponse(socket, { permission: 'allow' });
+        } else {
+            this._opts.log(`${reason} — denying (failClosed)`);
+            this._sendResponse(socket, { permission: 'deny', message: reason });
+        }
+    }
+
+    // ── Response helpers ────────────────────────────────────────────────────
+
+    private _sendResponse(socket: net.Socket, response: HookResponse): void {
+        const json = JSON.stringify(response);
+        socket.write(json, 'utf8', () => socket.end());
+    }
+
+    // ── Utility ─────────────────────────────────────────────────────────────
+
+    private _parseErrorCode(body: string): string {
+        try {
+            const parsed = JSON.parse(body);
+            return parsed?.error || '';
+        } catch {
+            return '';
+        }
+    }
 
     /** Generates a cryptographically random local secret. */
     static generateLocalSecret(): string {

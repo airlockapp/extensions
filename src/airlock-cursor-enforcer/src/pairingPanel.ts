@@ -192,7 +192,7 @@ export class PairingPanel {
             // Store opaque routing token for privacy-preserving routing
             if (routingToken) {
                 await storeRoutingToken(this.context, routingToken);
-                this.out.appendLine(`[Airlock Pairing] ✓ Routing token stored: ${routingToken}`);
+                this.out.appendLine(`[Airlock Pairing] ✓ Routing token stored (${routingToken.length} chars)`);
             } else {
                 this.out.appendLine(`[Airlock Pairing] ⚠ No routing token received from Gateway in /status response!`);
             }

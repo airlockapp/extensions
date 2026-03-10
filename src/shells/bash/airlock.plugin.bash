@@ -63,6 +63,13 @@ _airlock_bash_accept_line() {
     return
   fi
 
+  # Don't intercept airlock-cli's own commands (prevents recursive blocking)
+  local cli_name="${AIRLOCK_CLI##*/}"  # basename of configured CLI
+  if [[ "$cmd" == "$AIRLOCK_CLI "* || "$cmd" == "$AIRLOCK_CLI" || "$cmd" == "$cli_name "* || "$cmd" == "$cli_name" ]]; then
+    _airlock_execute_current_line
+    return
+  fi
+
   _airlock_call_cli "$cmd"
   local rc=$?
 

@@ -36,15 +36,20 @@ export class DeviceAuth {
         return true;
     }
 
-    /** Full login flow: prompt for gateway URL → start device auth → open browser → poll for tokens. */
-    async login(): Promise<boolean> {
-        // 1. Get Gateway URL
-        const gatewayUrl = await vscode.window.showInputBox({
-            title: 'Airlock Gateway URL',
-            prompt: 'Enter the Gateway URL (e.g. https://localhost:7145)',
-            value: this.gatewayUrl || 'https://localhost:7145',
-            validateInput: (v) => v.startsWith('http') ? null : 'Must start with http:// or https://'
-        });
+    /** Full login flow: optionally prompt for gateway URL → start device auth → open browser → poll for tokens.
+     *  If resolvedGatewayUrl is provided, skip the URL prompt (prod builds use the hardcoded gateway).
+     */
+    async login(resolvedGatewayUrl?: string): Promise<boolean> {
+        // 1. Get Gateway URL — skip prompt if resolved URL is provided
+        let gatewayUrl = resolvedGatewayUrl;
+        if (!gatewayUrl) {
+            gatewayUrl = await vscode.window.showInputBox({
+                title: 'Airlock Gateway URL',
+                prompt: 'Enter the Gateway URL (e.g. https://localhost:7145)',
+                value: this.gatewayUrl || 'https://localhost:7145',
+                validateInput: (v) => v.startsWith('http') ? null : 'Must start with http:// or https://'
+            });
+        }
         if (!gatewayUrl) { return false; }
 
         // 2. Start device authorization
@@ -125,7 +130,7 @@ export class DeviceAuth {
     async refresh(): Promise<boolean> {
         if (!this.refreshToken || !this.gatewayUrl) { return false; }
 
-        const resp = await this.postJson(`${this.gatewayUrl}/v1/auth/refresh`, {
+        const resp = await this.postJson(`${this.gatewayUrl}/v1/auth/enforcer/refresh`, {
             refreshToken: this.refreshToken
         });
 
@@ -238,6 +243,30 @@ export class DeviceAuth {
             );
             return Date.now() >= (payload.exp as number) * 1000;
         } catch { return true; }
+    }
+
+    /** Get token expiry info for diagnostic logging. */
+    getTokenInfo(): { accessExp?: string; refreshExp?: string } {
+        const parseExp = (token: string | undefined): string | undefined => {
+            if (!token) { return undefined; }
+            try {
+                const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
+                const expMs = (payload.exp as number) * 1000;
+                const now = Date.now();
+                const remaining = expMs - now;
+                const expDate = new Date(expMs).toISOString();
+                if (remaining <= 0) {
+                    return `EXPIRED at ${expDate} (${Math.round(-remaining / 60_000)}m ago)`;
+                }
+                const hours = Math.floor(remaining / 3_600_000);
+                const mins = Math.floor((remaining % 3_600_000) / 60_000);
+                return `expires ${expDate} (in ${hours}h${mins}m)`;
+            } catch { return 'not a JWT'; }
+        };
+        return {
+            accessExp: parseExp(this.accessToken),
+            refreshExp: parseExp(this.refreshToken),
+        };
     }
 
     /** Clear all stored tokens. */

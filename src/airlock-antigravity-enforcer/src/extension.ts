@@ -24,6 +24,7 @@ let presenceClient: PresenceClient | null = null;
 let deviceAuth: DeviceAuth;
 let _refreshTimer: { dispose(): void } | null = null;
 let _quotaTimer: ReturnType<typeof setInterval> | null = null;
+let _diagnosticMode = false;
 
 /**
  * Get or auto-generate a persistent enforcerId.
@@ -60,6 +61,12 @@ export function activate(context: vscode.ExtensionContext) {
     };
     applyTlsConfig();
 
+    // ── Diagnostic Mode ───────────────────────────────────────
+    _diagnosticMode = vscode.workspace.getConfiguration("airlock").get<boolean>("diagnosticMode", false);
+    if (_diagnosticMode) {
+        out.appendLine("[Airlock] Diagnostic mode: ON (verbose logging enabled)");
+    }
+
     let strategy: CdpDetectionStrategy | null = null;
 
     // Re-apply if user changes the setting while the extension is running
@@ -81,6 +88,13 @@ export function activate(context: vscode.ExtensionContext) {
                     out.appendLine("[Airlock] autoApprovePatterns changed — updating CDP handler config");
                     strategy.updateConfig(getConfig());
                 }
+            }
+            // Update diagnostic mode when setting changes
+            if (e.affectsConfiguration("airlock.diagnosticMode")) {
+                _diagnosticMode = vscode.workspace.getConfiguration("airlock").get<boolean>("diagnosticMode", false);
+                out.appendLine(`[Airlock] Diagnostic mode: ${_diagnosticMode ? "ON" : "OFF"}`);
+                if (strategy) { strategy.setDiagnosticMode(_diagnosticMode); }
+                autoMode.setDiagnosticMode(_diagnosticMode);
             }
         })
     );
@@ -135,6 +149,7 @@ export function activate(context: vscode.ExtensionContext) {
         () => deviceAuth?.token
     );
     context.subscriptions.push(autoMode);
+    autoMode.setDiagnosticMode(_diagnosticMode);
 
     // ── Configuration ──────────────────────────────────────────
     const getConfig = (): DetectionConfig => {
@@ -149,8 +164,12 @@ export function activate(context: vscode.ExtensionContext) {
     const init = async () => {
         endpoint = await resolveEndpoint(out, context.extension.packageJSON.name);
 
+        // Set context key for command visibility (dev builds only show configureGateway)
+        const isDevBuild = !context.extension.packageJSON.name || context.extension.packageJSON.name.endsWith("-dev");
+        vscode.commands.executeCommand("setContext", "airlock.isDevBuild", isDevBuild);
+
         if (endpoint) {
-            out.appendLine(`[Airlock] Endpoint: ${endpoint.url} (${endpoint.source})`);
+            out.appendLine(`[Airlock] Gateway: ${endpoint.url} (${endpoint.source})`);
         } else {
             updateToggleStatusBar(toggleItem, "no-endpoint");
         }
@@ -164,6 +183,7 @@ export function activate(context: vscode.ExtensionContext) {
             vscode.env.sessionId,   // Session ID — page-level ownership filtering
             vscode.workspace.name ?? ""  // Workspace name — target-level filtering
         );
+        strategy.setDiagnosticMode(_diagnosticMode);
 
         const available = await strategy.isAvailable();
         if (!available) {
@@ -286,11 +306,10 @@ export function activate(context: vscode.ExtensionContext) {
         out.appendLine(`[Airlock] Init error: ${err}`);
     });
 
-    // ── Helper: ensure endpoint ────────────────────────────────
     const requireEndpoint = (): string | null => {
         if (endpoint) { return endpoint.url; }
         vscode.window.showWarningMessage(
-            'Airlock: No endpoint configured. Use "Configure Endpoint" to set one.'
+            'Airlock: No gateway configured. Use "Configure Gateway" to set one.'
         );
         return null;
     };
@@ -298,18 +317,18 @@ export function activate(context: vscode.ExtensionContext) {
     // ── Helper: ensure device auth ──────────────────────────────
     const requireAuth = async (): Promise<boolean> => {
         if (!deviceAuth) {
-            out.appendLine('[Airlock] requireAuth: creating new DeviceAuth');
+            if (_diagnosticMode) { out.appendLine('[Airlock] requireAuth: creating new DeviceAuth'); }
             deviceAuth = new DeviceAuth(context.secrets);
             await deviceAuth.restoreSession();
         }
         if (deviceAuth.isLoggedIn) {
-            out.appendLine('[Airlock] requireAuth: already logged in');
+            if (_diagnosticMode) { out.appendLine('[Airlock] requireAuth: already logged in'); }
             return true;
         }
         // Try restoring in case tokens were stored after init
         await deviceAuth.restoreSession();
         if (deviceAuth.isLoggedIn) {
-            out.appendLine('[Airlock] requireAuth: session restored');
+            if (_diagnosticMode) { out.appendLine('[Airlock] requireAuth: session restored'); }
             return true;
         }
         out.appendLine('[Airlock] requireAuth: NOT logged in — prompting');
@@ -319,7 +338,7 @@ export function activate(context: vscode.ExtensionContext) {
             'Sign In'
         );
         if (login === 'Sign In') {
-            return await deviceAuth.login();
+            return await deviceAuth.login(endpoint?.url);
         }
         return false;
     };
@@ -390,12 +409,16 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
-    // ── Command: Configure Endpoint ────────────────────────────
+
+
+
+
+    // ── Command: Configure Gateway (dev builds only) ───────────
     context.subscriptions.push(
-        vscode.commands.registerCommand("airlock.configureEndpoint", async () => {
+        vscode.commands.registerCommand("airlock.configureGateway", async () => {
             const current = endpoint?.url ?? "";
             const input = await vscode.window.showInputBox({
-                title: "Airlock: Configure Approval Endpoint",
+                title: "Airlock: Configure Gateway URL",
                 prompt: "Enter the Airlock Gateway URL (e.g. http://localhost:5100)",
                 value: current,
                 placeHolder: "http://127.0.0.1:7771",
@@ -405,13 +428,13 @@ export function activate(context: vscode.ExtensionContext) {
 
             if (input.trim()) {
                 await vscode.workspace.getConfiguration("airlock")
-                    .update("approvalEndpoint", input.trim(), vscode.ConfigurationTarget.Global);
+                    .update("gatewayUrl", input.trim(), vscode.ConfigurationTarget.Global);
                 endpoint = { url: input.trim(), source: "setting" };
                 updateToggleStatusBar(toggleItem, autoMode.isEnabled ? "on" : "connected");
-                out.appendLine(`[Airlock] Endpoint set: ${input.trim()}`);
+                out.appendLine(`[Airlock] Gateway set: ${input.trim()}`);
             } else {
                 await vscode.workspace.getConfiguration("airlock")
-                    .update("approvalEndpoint", undefined, vscode.ConfigurationTarget.Global);
+                    .update("gatewayUrl", undefined, vscode.ConfigurationTarget.Global);
                 endpoint = await resolveEndpoint(out, context.extension.packageJSON.name);
                 updateToggleStatusBar(toggleItem, endpoint ? "connected" : "no-endpoint");
             }
@@ -419,7 +442,6 @@ export function activate(context: vscode.ExtensionContext) {
     );
 
 
-    // ── Command: Relaunch with CDP ─────────────────────────────
     context.subscriptions.push(
         vscode.commands.registerCommand("airlock.relaunch", async () => {
             const result = await relauncher.relaunchWithCdp();
@@ -552,7 +574,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand("airlock.login", async () => {
             if (!deviceAuth) { deviceAuth = new DeviceAuth(context.secrets); }
-            const success = await deviceAuth.login();
+            const success = await deviceAuth.login(endpoint?.url);
             if (success) {
                 updateSignInStatusBar(signInStatusBarItem, { status: "signed-in" });
                 await checkAndUpdateQuota(signInStatusBarItem, out);

@@ -1,4 +1,6 @@
 import * as vscode from "vscode";
+import * as fs from "fs";
+import * as path from "path";
 import { resolveEndpoint, type EndpointInfo } from "./endpointResolver.js";
 import {
     createToggleStatusBarItem,
@@ -18,15 +20,23 @@ import { PresenceClient } from "./presenceClient.js";
 import { DeviceAuth } from "./deviceAuth.js";
 import { NamedPipeProxy } from "./namedPipeProxy.js";
 
+/** Per-folder Airlock context.
+ *  For Windsurf, only the primary folder gets a pipe + hooks.
+ *  Non-primary folders are tracked but have no pipe or hooks. */
+interface WorkspaceContext {
+    folderPath: string;
+    folderName: string;
+    proxy?: NamedPipeProxy;
+    strategy?: HooksDetectionStrategy;
+}
+
 let endpoint: EndpointInfo | null = null;
 let pairingStatusBarItem: vscode.StatusBarItem;
 let presenceClient: PresenceClient | null = null;
 let deviceAuth: DeviceAuth;
-let _pipeProxy: NamedPipeProxy | null = null;
+const _workspaceContexts = new Map<string, WorkspaceContext>();
 let _refreshTimer: { dispose(): void } | null = null;
 let _quotaTimer: ReturnType<typeof setInterval> | null = null;
-
-const LOCAL_SECRET = NamedPipeProxy.generateLocalSecret();
 
 /**
  * Get or auto-generate a persistent enforcerId.
@@ -51,19 +61,18 @@ function getOrCreateEnforcerId(context: vscode.ExtensionContext): string {
 export function activate(context: vscode.ExtensionContext) {
     const out = vscode.window.createOutputChannel("Airlock Windsurf");
     const enforcerId = getOrCreateEnforcerId(context);
-    out.appendLine(`Airlock Windsurf Enforcer v2 activated. EnforcerId: ${enforcerId}`);
+    out.appendLine(`Airlock Windsurf Enforcer v3 activated. EnforcerId: ${enforcerId}`);
     out.show(true);
 
     // ── TLS configuration ─────────────────────────────────────
-    // Allow self-signed certs only when explicitly enabled in settings.
     const applyTlsConfig = () => {
         const allow = vscode.workspace.getConfiguration("airlock").get<boolean>("allowSelfSignedCerts", false);
         process.env["NODE_TLS_REJECT_UNAUTHORIZED"] = allow ? "0" : "1";
-        out.appendLine(`[Airlock] TLS: ${allow ? "self-signed certs allowed (allowSelfSignedCerts=true)" : "strict TLS (allowSelfSignedCerts=false)"}`);
+        out.appendLine(`[Airlock] TLS: ${allow ? "self-signed certs allowed" : "strict TLS"}`);
     };
     applyTlsConfig();
 
-    // Re-apply if user changes the setting while the extension is running
+    // Re-apply on setting change
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration((e) => {
             if (e.affectsConfiguration("airlock.allowSelfSignedCerts")) {
@@ -76,20 +85,24 @@ export function activate(context: vscode.ExtensionContext) {
                     }
                 }
             }
-            // Re-write hooks wrapper when auto-approve patterns change
-            if (e.affectsConfiguration("airlock.autoApprovePatterns")) {
-                if (strategy) {
-                    out.appendLine("[Airlock] autoApprovePatterns changed — rewriting hooks wrappers");
-                    strategy.reinstallHooks().catch(() => { /* non-fatal */ });
+            // Re-write bootstrap wrapper when config changes (failMode, auto-approve)
+            if (e.affectsConfiguration("airlock.autoApprovePatterns") ||
+                e.affectsConfiguration("airlock.failMode")) {
+                out.appendLine("[Airlock] Config changed — updating workspace hooks and pipe server");
+                const cfg = vscode.workspace.getConfiguration("airlock");
+                for (const [, ctx] of _workspaceContexts) {
+                    if (!ctx.proxy || !ctx.strategy) { continue; }
+                    ctx.proxy.updateOptions({
+                        autoApprovePatterns: cfg.get<string[]>("autoApprovePatterns", []),
+                        failMode: cfg.get<string>("failMode", "failClosed") as "failClosed" | "failOpen",
+                    });
+                    ctx.strategy.reinstallHooks().catch(() => { /* non-fatal */ });
                 }
             }
         })
     );
 
     // ── One-time migration: clear old globalState pairing data ──────
-    // Before Sprint 18_3b, pairing state was stored in globalState (shared
-    // across all workspaces). Now it's in workspaceState. Clear the old
-    // global keys so stale pairings don't leak into unrelated workspaces.
     const migrationKey = "airlock.migrated.workspaceState.v1";
     if (!context.globalState.get<boolean>(migrationKey)) {
         const oldKeys = ["airlock.routingToken", "airlock.pairedKeys",
@@ -97,11 +110,10 @@ export function activate(context: vscode.ExtensionContext) {
         for (const key of oldKeys) {
             context.globalState.update(key, undefined);
         }
-        // Also clear old unscoped encryption key from SecretStorage
         context.secrets.delete("airlock.encryptionKey");
         context.secrets.delete("airlock.x25519PrivateKey");
         context.globalState.update(migrationKey, true);
-        out.appendLine("[Airlock] ✓ Migrated: cleared old global pairing state. Please re-pair in this workspace.");
+        out.appendLine("[Airlock] ✓ Migrated: cleared old global pairing state.");
     }
 
     // ── Status Bar Items ─────────────────────────────────────────
@@ -111,7 +123,6 @@ export function activate(context: vscode.ExtensionContext) {
     const approvalItem = createApprovalStatusBarItem();
     context.subscriptions.push(approvalItem);
 
-    // ── Auth status bar (sign-in indicator + quota warnings) ──────
     const signInStatusBarItem = createSignInStatusBarItem();
     context.subscriptions.push(signInStatusBarItem);
 
@@ -123,7 +134,6 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(pairingStatusBarItem);
     updatePairingStatusBar(context);
     pairingStatusBarItem.show();
-
 
     // ── Auto-Mode Controller ───────────────────────────────────
     const autoMode = new AutoModeController(
@@ -143,53 +153,152 @@ export function activate(context: vscode.ExtensionContext) {
         };
     };
 
+    // ── Diagnostic mode helper ─────────────────────────────────
+    const logDiag = (msg: string) => {
+        const diag = vscode.workspace.getConfiguration("airlock").get<boolean>("diagnosticMode", false);
+        if (diag) {
+            out.appendLine(`[Airlock Diag] ${msg}`);
+        }
+    };
+
     // ── Initialization ─────────────────────────────────────────
-    let strategy: HooksDetectionStrategy | null = null;
+
+    /** Create a pipe server + hooks for a single workspace folder.
+     *  For Windsurf, only the primary (first) folder gets a pipe + hooks.
+     *  Non-primary folders are tracked but are inert. */
+    const setupWorkspaceFolder = async (folder: vscode.WorkspaceFolder, isPrimary: boolean): Promise<WorkspaceContext | null> => {
+        const folderPath = folder.uri.fsPath;
+        const folderName = folder.name;
+
+        // Skip if already set up
+        if (_workspaceContexts.has(folderPath)) {
+            return _workspaceContexts.get(folderPath)!;
+        }
+
+        const cfg = vscode.workspace.getConfiguration("airlock");
+        const effectiveRepoName = vscode.workspace.name || folderName;
+
+        // Non-primary folders: track but do not create pipe or hooks
+        if (!isPrimary) {
+            out.appendLine(`[Airlock] Folder ${folderName}: non-primary — skipping pipe & hooks`);
+            const ctx: WorkspaceContext = { folderPath, folderName };
+            _workspaceContexts.set(folderPath, ctx);
+            return ctx;
+        }
+
+        // Primary folder: create pipe + hooks
+        const workspaceHash = NamedPipeProxy.computeWorkspaceHash(folderPath);
+        const pipeName = NamedPipeProxy.getPipeName(workspaceHash);
+
+        out.appendLine(`[Airlock] Setting up primary folder: ${folderName} (repoName=${effectiveRepoName})`);
+        logDiag(`hash=${workspaceHash}, pipe=${pipeName}`);
+
+        // Create pipe server
+        const proxy = new NamedPipeProxy({
+            enforcerId,
+            gatewayUrl: endpoint?.url ?? "",
+            workspaceName: effectiveRepoName,
+            repoName: effectiveRepoName,
+            failMode: cfg.get<string>("failMode", "failClosed") as "failClosed" | "failOpen",
+            autoApprovePatterns: cfg.get<string[]>("autoApprovePatterns", []),
+            auth: () => deviceAuth,
+            getEncryptionKey: () => getEncryptionKey(context),
+            getRoutingToken: () => getRoutingToken(context),
+            timeoutSeconds: cfg.get<number>("approvalTimeoutSeconds", 60),
+            log: (msg) => out.appendLine(`[Airlock Pipe:${folderName}] ${msg}`),
+            logDiag: (msg) => logDiag(`[Pipe:${folderName}] ${msg}`),
+            onQuotaExceeded: (errorCode) => {
+                out.appendLine(`[Airlock Pipe:${folderName}] ⚠ Quota exceeded: ${errorCode}`);
+                updateSignInStatusBar(signInStatusBarItem, {
+                    status: "quota-warning",
+                    workspacesUsed: -1, workspacesLimit: -1,
+                });
+                vscode.window.showWarningMessage(
+                    `Airlock: Plan quota exceeded (${errorCode}). You may need to upgrade your plan.`
+                );
+            },
+        }, pipeName);
+
+        try {
+            await proxy.start();
+        } catch (pipeErr) {
+            out.appendLine(`[Airlock Pipe:${folderName}] Failed to start proxy: ${pipeErr}`);
+        }
+
+        // Create hooks strategy for this folder
+        const strategy = new HooksDetectionStrategy(
+            out,
+            context,
+            enforcerId,
+            endpoint?.url ?? "",
+            pipeName,
+            folderPath,
+        );
+
+        const ctx: WorkspaceContext = { folderPath, folderName, proxy, strategy };
+        _workspaceContexts.set(folderPath, ctx);
+        context.subscriptions.push({ dispose: () => { proxy.stop(); } });
+        context.subscriptions.push(strategy);
+
+        return ctx;
+    };
+
+    /** Tear down a workspace folder's Airlock context. */
+    const teardownWorkspaceFolder = (folderPath: string): void => {
+        const ctx = _workspaceContexts.get(folderPath);
+        if (!ctx) { return; }
+        ctx.proxy?.stop();
+        ctx.strategy?.dispose();
+        _workspaceContexts.delete(folderPath);
+        out.appendLine(`[Airlock] Removed folder context: ${ctx.folderName}`);
+    };
+
+    /** Ensure primary workspace folder has a pipe proxy running. */
+    const ensureAllPipeProxies = async (): Promise<void> => {
+        const folders = vscode.workspace.workspaceFolders || [];
+        for (let i = 0; i < folders.length; i++) {
+            await setupWorkspaceFolder(folders[i], i === 0);
+        }
+    };
 
     const init = async () => {
         endpoint = await resolveEndpoint(out, context.extension.packageJSON.name);
 
+        // Set context key for command visibility (dev builds only show configureGateway)
+        const isDevBuild = !context.extension.packageJSON.name || context.extension.packageJSON.name.endsWith("-dev");
+        vscode.commands.executeCommand("setContext", "airlock.isDevBuild", isDevBuild);
+
         if (endpoint) {
-            out.appendLine(`[Airlock] Endpoint: ${endpoint.url} (${endpoint.source})`);
+            out.appendLine(`[Airlock] Gateway: ${endpoint.url} (${endpoint.source})`);
         } else {
             updateToggleStatusBar(toggleItem, "no-endpoint");
         }
 
-        // ── Named Pipe Proxy (JWT ↔ gate script bridge) ─────────────
-        if (!deviceAuth) { deviceAuth = new DeviceAuth(context.secrets); }
-        const pipeName = NamedPipeProxy.getPipeName(enforcerId);
-        if (!_pipeProxy) {
-            _pipeProxy = new NamedPipeProxy({
-                enforcerId, gatewayUrl: endpoint?.url ?? "", localSecret: LOCAL_SECRET,
-                auth: () => deviceAuth,
-                getEncryptionKey: () => getEncryptionKey(context),
-                log: (msg) => out.appendLine(`[Airlock Pipe] ${msg}`),
-                onQuotaExceeded: (errorCode) => {
-                    out.appendLine(`[Airlock Pipe] ⚠ Quota exceeded event: ${errorCode}`);
-                    updateSignInStatusBar(signInStatusBarItem, {
-                        status: "quota-warning",
-                        workspacesUsed: -1, workspacesLimit: -1,
-                    });
-                    vscode.window.showWarningMessage(
-                        `Airlock: Plan quota exceeded (${errorCode}). Requests are being allowed (fail-open) but you may need to upgrade your plan.`
-                    );
-                },
-            });
-            try { await _pipeProxy.start(); } catch (e) { out.appendLine(`[Airlock Pipe] Failed: ${e}`); }
-            context.subscriptions.push({ dispose: () => { _pipeProxy?.stop(); _pipeProxy = null; } });
+        // ── Git safety warning (v3 §17) ─────────────────────────
+        checkGitSafety(out);
+
+        // ── Named Pipe Proxy (primary folder only, like Copilot) ─
+        if (!deviceAuth) {
+            deviceAuth = new DeviceAuth(context.secrets);
         }
 
-        // ── Hooks strategy (Windsurf native) ──────────────────────────
-        out.appendLine(`[Airlock] Detection strategy: hooks`);
+        const folders = vscode.workspace.workspaceFolders || [];
+        out.appendLine(`[Airlock] Workspace has ${folders.length} folder(s)`);
         out.appendLine(`[Airlock IDE] appName="${vscode.env.appName}" sessionId=${vscode.env.sessionId.substring(0, 8)}`);
 
-        strategy = new HooksDetectionStrategy(
-            out, context, enforcerId, endpoint?.url ?? "",
-            pipeName, LOCAL_SECRET,
-        );
+        // Set up pipe + hooks for primary folder only; track non-primary folders
+        let firstStrategy: HooksDetectionStrategy | null = null;
+        for (let i = 0; i < folders.length; i++) {
+            const ctx = await setupWorkspaceFolder(folders[i], i === 0);
+            if (ctx?.strategy && !firstStrategy) {
+                firstStrategy = ctx.strategy;
+            }
+        }
 
-        context.subscriptions.push(strategy);
-        await autoMode.setStrategy(strategy, getConfig());
+        // Use primary folder's strategy for auto-mode (Windsurf uses primary folder)
+        if (firstStrategy) {
+            await autoMode.setStrategy(firstStrategy, getConfig());
+        }
 
         if (autoMode.isEnabled) {
             updateToggleStatusBar(toggleItem, "on");
@@ -199,7 +308,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         // ── Presence Client ────────────────────────────────────
         if (endpoint) {
-            presenceClient = new PresenceClient(out, "2.0.0", "Windsurf");
+            presenceClient = new PresenceClient(out, "3.0.0", "Windsurf");
             context.subscriptions.push({ dispose: () => presenceClient?.dispose() });
 
             presenceClient.onEvent(async (event) => {
@@ -208,29 +317,29 @@ export function activate(context: vscode.ExtensionContext) {
                 } else if (event === "disconnected") {
                     updateToggleStatusBar(toggleItem, autoMode.isEnabled ? "on" : "connected");
                 } else if (event === "pairing.revoked") {
-                    out.appendLine("[Airlock] Pairing revoked by admin. Stopping proxy and clearing pairing state.");
-                    // Stop the pipe proxy so the gate script fails open until re-paired
-                    _pipeProxy?.stop();
-                    _pipeProxy = null;
+                    out.appendLine("[Airlock] Pairing revoked by mobile approver.");
                     await clearRoutingToken(context);
                     await clearEncryptionKey(context);
+                    await context.secrets.delete("airlock.x25519PrivateKey");
+                    await context.workspaceState.update("airlock.x25519PublicKey", undefined);
+                    await context.workspaceState.update("airlock.pairedKeyId", undefined);
+                    await context.workspaceState.update("airlock.pairedPublicKey", undefined);
                     updatePairingStatusBar(context);
-                    if (strategy) {
-                        try { await strategy.reinstallHooks(); } catch { /* non-fatal */ }
+                    for (const [, ctx] of _workspaceContexts) {
+                        try { if (ctx.strategy) { await ctx.strategy.reinstallHooks(); } } catch { /* non-fatal */ }
                     }
                     vscode.window.showWarningMessage(
-                        "Airlock: This pairing was revoked by an admin. Hooks are now inactive \u2014 re-pair to resume enforcement."
+                        "Airlock: The mobile approver removed this pairing. Hooks are now inactive — re-pair to resume enforcement."
                     );
                 }
             });
 
-            // Restore auth session
-            if (!deviceAuth) { deviceAuth = new DeviceAuth(context.secrets); }
+            // Restore auth session and connect presence WS.
+            deviceAuth = new DeviceAuth(context.secrets);
             const restored = await deviceAuth.restoreSession();
+
             if (restored) {
-                // Fetch quota status and update sign-in item
                 await checkAndUpdateQuota(signInStatusBarItem, out);
-                // Start periodic quota check
                 context.subscriptions.push(startQuotaTimer(signInStatusBarItem, out));
                 _refreshTimer?.dispose();
                 _refreshTimer = deviceAuth.startRefreshTimer();
@@ -240,6 +349,7 @@ export function activate(context: vscode.ExtensionContext) {
                         if (loggedIn) {
                             updateSignInStatusBar(signInStatusBarItem, { status: "signed-in" });
                             checkAndUpdateQuota(signInStatusBarItem, out);
+                            logDiag(`Token refreshed at ${new Date().toISOString()}`);
                             if (presenceClient && endpoint) {
                                 presenceClient.disconnect();
                                 presenceClient.connect(endpoint.url, () => deviceAuth?.token, enforcerId);
@@ -274,6 +384,25 @@ export function activate(context: vscode.ExtensionContext) {
         out.appendLine(`[Airlock] Init error: ${err}`);
     });
 
+    // ── Listen for workspace folder changes (v3 §3-4) ──────────
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeWorkspaceFolders(async (e) => {
+            // Set up new folders
+            for (const added of e.added) {
+                out.appendLine(`[Airlock] Workspace folder added: ${added.name}`);
+                const ctx = await setupWorkspaceFolder(added, false);
+                if (ctx?.strategy) {
+                    try { await ctx.strategy.start(getConfig()); } catch { /* non-fatal */ }
+                }
+            }
+            // Tear down removed folders
+            for (const removed of e.removed) {
+                out.appendLine(`[Airlock] Workspace folder removed: ${removed.name}`);
+                teardownWorkspaceFolder(removed.uri.fsPath);
+            }
+        })
+    );
+
     // ── Helper: ensure presence connected ───────────────────────
     const ensurePresenceConnected = async () => {
         if (!endpoint) { return; }
@@ -282,7 +411,7 @@ export function activate(context: vscode.ExtensionContext) {
             await deviceAuth.restoreSession();
         }
         if (!presenceClient) {
-            presenceClient = new PresenceClient(out, "2.0.0", "Windsurf");
+            presenceClient = new PresenceClient(out, "3.0.0", "Windsurf");
             context.subscriptions.push({ dispose: () => presenceClient?.dispose() });
             presenceClient.onEvent(async (event) => {
                 if (event === "connected") {
@@ -290,17 +419,19 @@ export function activate(context: vscode.ExtensionContext) {
                 } else if (event === "disconnected") {
                     updateToggleStatusBar(toggleItem, autoMode.isEnabled ? "on" : "connected");
                 } else if (event === "pairing.revoked") {
-                    out.appendLine("[Airlock] Pairing revoked by admin. Stopping proxy and clearing pairing state.");
-                    _pipeProxy?.stop();
-                    _pipeProxy = null;
+                    out.appendLine("[Airlock] Pairing revoked by mobile approver.");
                     await clearRoutingToken(context);
                     await clearEncryptionKey(context);
+                    await context.secrets.delete("airlock.x25519PrivateKey");
+                    await context.workspaceState.update("airlock.x25519PublicKey", undefined);
+                    await context.workspaceState.update("airlock.pairedKeyId", undefined);
+                    await context.workspaceState.update("airlock.pairedPublicKey", undefined);
                     updatePairingStatusBar(context);
-                    if (strategy) {
-                        try { await strategy.reinstallHooks(); } catch { /* non-fatal */ }
+                    for (const [, ctx] of _workspaceContexts) {
+                        try { if (ctx.strategy) { await ctx.strategy.reinstallHooks(); } } catch { /* non-fatal */ }
                     }
                     vscode.window.showWarningMessage(
-                        "Airlock: This pairing was revoked by an admin. Hooks are now inactive \u2014 re-pair to resume enforcement."
+                        "Airlock: The mobile approver removed this pairing. Hooks are now inactive — re-pair to resume enforcement."
                     );
                 }
             });
@@ -313,7 +444,7 @@ export function activate(context: vscode.ExtensionContext) {
     const requireEndpoint = (): string | null => {
         if (endpoint) { return endpoint.url; }
         vscode.window.showWarningMessage(
-            'Airlock: No endpoint configured. Use "Configure Endpoint" to set one.'
+            'Airlock: No gateway configured. Use "Configure Gateway" to set one.'
         );
         return null;
     };
@@ -326,13 +457,12 @@ export function activate(context: vscode.ExtensionContext) {
             await deviceAuth.restoreSession();
         }
         if (deviceAuth.isLoggedIn) {
-            out.appendLine('[Airlock] requireAuth: already logged in');
+            logDiag('requireAuth: already logged in');
             return true;
         }
-        // Try restoring in case tokens were stored after init
         await deviceAuth.restoreSession();
         if (deviceAuth.isLoggedIn) {
-            out.appendLine('[Airlock] requireAuth: session restored');
+            logDiag('requireAuth: session restored');
             return true;
         }
         out.appendLine('[Airlock] requireAuth: NOT logged in — prompting');
@@ -342,7 +472,7 @@ export function activate(context: vscode.ExtensionContext) {
             'Sign In'
         );
         if (login === 'Sign In') {
-            return await deviceAuth.login();
+            return await deviceAuth.login(endpoint?.url);
         }
         return false;
     };
@@ -391,9 +521,6 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
-
-
-
     // ── Command: Show Status ───────────────────────────────────
     context.subscriptions.push(
         vscode.commands.registerCommand("airlock.showStatus", async () => {
@@ -407,18 +534,32 @@ export function activate(context: vscode.ExtensionContext) {
             out.appendLine(`Strategy: ${autoMode.strategyName}`);
             out.appendLine(`Auto-Mode: ${autoMode.isEnabled ? "ON" : "OFF"}`);
 
+            // Per-folder pipe info
+            if (_workspaceContexts.size > 0) {
+                out.appendLine(`Active Pipes: ${_workspaceContexts.size}`);
+                for (const [, ctx] of _workspaceContexts) {
+                    out.appendLine(`  - ${ctx.folderName}: ${ctx.proxy?.pipeName ?? '(no pipe)'}`);
+                }
+            } else {
+                out.appendLine("Active Pipes: none");
+            }
+
+            const cfg = vscode.workspace.getConfiguration("airlock");
+            out.appendLine(`Fail Mode: ${cfg.get<string>("failMode", "failClosed")}`);
+            out.appendLine(`Diagnostic Mode: ${cfg.get<boolean>("diagnosticMode", false) ? "ON" : "OFF"}`);
+
             vscode.window.showInformationMessage(
-                `Airlock: Endpoint=${epStr}, Strategy=${autoMode.strategyName}, Auto=${autoMode.isEnabled ? "ON" : "OFF"}`
+                `Airlock: Endpoint=${epStr}, Strategy=${autoMode.strategyName}, Auto=${autoMode.isEnabled ? "ON" : "OFF"}, Pipes=${_workspaceContexts.size}`
             );
         })
     );
 
-    // ── Command: Configure Endpoint ────────────────────────────
+    // ── Command: Configure Gateway (dev builds only) ───────────
     context.subscriptions.push(
-        vscode.commands.registerCommand("airlock.configureEndpoint", async () => {
+        vscode.commands.registerCommand("airlock.configureGateway", async () => {
             const current = endpoint?.url ?? "";
             const input = await vscode.window.showInputBox({
-                title: "Airlock: Configure Approval Endpoint",
+                title: "Airlock: Configure Gateway URL",
                 prompt: "Enter the Airlock Gateway URL (e.g. http://localhost:5100)",
                 value: current,
                 placeHolder: "http://127.0.0.1:7771",
@@ -428,15 +569,14 @@ export function activate(context: vscode.ExtensionContext) {
 
             if (input.trim()) {
                 await vscode.workspace.getConfiguration("airlock")
-                    .update("approvalEndpoint", input.trim(), vscode.ConfigurationTarget.Global);
+                    .update("gatewayUrl", input.trim(), vscode.ConfigurationTarget.Global);
                 endpoint = { url: input.trim(), source: "setting" };
                 updateToggleStatusBar(toggleItem, autoMode.isEnabled ? "on" : "connected");
-                out.appendLine(`[Airlock] Endpoint set: ${input.trim()}`);
-                // Connect presence if not yet connected
+                out.appendLine(`[Airlock] Gateway set: ${input.trim()}`);
                 await ensurePresenceConnected();
             } else {
                 await vscode.workspace.getConfiguration("airlock")
-                    .update("approvalEndpoint", undefined, vscode.ConfigurationTarget.Global);
+                    .update("gatewayUrl", undefined, vscode.ConfigurationTarget.Global);
                 endpoint = await resolveEndpoint(out, context.extension.packageJSON.name);
                 updateToggleStatusBar(toggleItem, endpoint ? "connected" : "no-endpoint");
             }
@@ -444,82 +584,79 @@ export function activate(context: vscode.ExtensionContext) {
     );
 
 
-
-
-    // ── Command: Start Pairing ─────────────────────────────────
     context.subscriptions.push(
         vscode.commands.registerCommand("airlock.startPairing", async () => {
             const url = requireEndpoint();
             if (!url) { return; }
             if (!await requireAuth()) { return; }
 
-            // Don't disable auto-mode — hooks keep detecting.
-            // After pairing, new routing token will be used for submissions.
-
             const config = vscode.workspace.getConfiguration("airlock");
             const deviceId = config.get<string>("deviceId") || `dev-${Date.now()}`;
 
             try {
-                // Generate keys before initiation so they're sent to Gateway for code-based pairing
                 const { generateX25519KeyPair, generateEncryptionKey } = await import("./crypto.js");
                 const x25519KeyPair = generateX25519KeyPair();
                 const encryptionKey = generateEncryptionKey();
 
-                // Human-readable label shown on mobile device during pairing
                 const enforcerLabel = "Windsurf";
-                const ws = vscode.workspace.workspaceFolders?.[0];
-                const workspaceName = ws?.name ?? "unknown";
+                const workspaceName = vscode.workspace.name ?? vscode.workspace.workspaceFolders?.[0]?.name ?? "unknown";
 
-                const session = await initiatePairing(
-                    url, deviceId, enforcerId, out,
-                    x25519KeyPair.publicKey, enforcerLabel,
-                    deviceAuth?.token, workspaceName
-                );
+                let token = deviceAuth?.token;
+                let session: Awaited<ReturnType<typeof initiatePairing>>;
+                try {
+                    session = await initiatePairing(
+                        url, deviceId, enforcerId, out,
+                        x25519KeyPair.publicKey, enforcerLabel,
+                        token, workspaceName
+                    );
+                } catch (initErr: unknown) {
+                    const errMsg = initErr instanceof Error ? initErr.message : String(initErr);
+                    if (errMsg.includes('401') && deviceAuth) {
+                        out.appendLine('[Airlock Pairing] Got 401 — refreshing token and retrying...');
+                        const refreshed = await deviceAuth.refresh();
+                        if (refreshed) {
+                            token = deviceAuth.token;
+                            session = await initiatePairing(
+                                url, deviceId, enforcerId, out,
+                                x25519KeyPair.publicKey, enforcerLabel,
+                                token, workspaceName
+                            );
+                        } else {
+                            out.appendLine('[Airlock Pairing] Token refresh failed');
+                            throw initErr;
+                        }
+                    } else {
+                        throw initErr;
+                    }
+                }
                 new PairingPanel(session, context, out, encryptionKey, x25519KeyPair, enforcerLabel, workspaceName,
                     async () => {
-                        // Pairing completed — update status bar and re-enable auto-mode
-                        // to clear _seenButtons so existing buttons are re-detected
-                        // with the new routing token
                         updatePairingStatusBar(context);
-                        out.appendLine("[Airlock Pairing] ✓ Paired — re-enabling auto-mode with new routing token.");
+                        out.appendLine("[Airlock Pairing] ✓ Paired — updating pipe servers.");
 
-                        // Restart pipe proxy (may have been destroyed by pairing.revoked)
-                        if (!_pipeProxy && endpoint) {
-                            const pipeName = NamedPipeProxy.getPipeName(enforcerId);
-                            _pipeProxy = new NamedPipeProxy({
-                                enforcerId,
-                                gatewayUrl: endpoint.url,
-                                localSecret: LOCAL_SECRET,
-                                auth: () => deviceAuth,
-                                getEncryptionKey: () => getEncryptionKey(context),
-                                log: (msg) => out.appendLine(`[Airlock Pipe] ${msg}`),
-                                onQuotaExceeded: (errorCode) => {
-                                    out.appendLine(`[Airlock Pipe] ⚠ Quota exceeded event: ${errorCode}`);
-                                    updateSignInStatusBar(signInStatusBarItem, {
-                                        status: "quota-warning",
-                                        workspacesUsed: -1, workspacesLimit: -1,
-                                    });
-                                    vscode.window.showWarningMessage(
-                                        `Airlock: Plan quota exceeded (${errorCode}). Requests are being allowed (fail-open) but you may need to upgrade your plan.`
-                                    );
-                                },
-                            });
-                            try { await _pipeProxy.start(); } catch { /* non-fatal */ }
-                            out.appendLine("[Airlock Pairing] Pipe proxy restarted after re-pairing.");
+                        // Ensure pipe proxies exist for all folders
+                        await ensureAllPipeProxies();
+
+                        // Re-install hooks for all folders
+                        for (const [, ctx] of _workspaceContexts) {
+                            if (!ctx.strategy) { continue; }
+                            out.appendLine(`[Airlock Pairing] Reinstalling hooks for ${ctx.folderName}...`);
+                            await ctx.strategy.reinstallHooks();
                         }
 
-                        // Re-install hooks with the new routing token
-                        // (hooks.json and .cmd file are regenerated with the token baked in)
-                        if (strategy) {
-                            out.appendLine("[Airlock Pairing] Reinstalling hooks with new routing token...");
-                            await strategy.reinstallHooks();
-                        }
-
-                        // Ensure presence is connected (may not have been if endpoint was set after init)
                         await ensurePresenceConnected();
                         await autoMode.enable(getConfig());
+
+                        const choice = await vscode.window.showInformationMessage(
+                            "Airlock: Pairing complete! Reload the window now to activate hooks in this session.",
+                            { modal: false },
+                            "Reload Window"
+                        );
+                        if (choice === "Reload Window") {
+                            vscode.commands.executeCommand("workbench.action.reloadWindow");
+                        }
                     },
-                    deviceAuth?.token
+                    token
                 );
             } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : String(err);
@@ -583,20 +720,15 @@ export function activate(context: vscode.ExtensionContext) {
                 }
             }
 
-            // Don't stop auto-mode — hooks keep detecting.
-            // Without routing token, submissions will pause until re-paired.
-
             await clearRoutingToken(context);
-            // Clear workspace-scoped encryption key
             await clearEncryptionKey(context);
-            // Clear paired X25519 keys from secret storage
             await context.secrets.delete("airlock.x25519PrivateKey");
             await context.workspaceState.update("airlock.x25519PublicKey", undefined);
             await context.workspaceState.update("airlock.pairedKeyId", undefined);
             await context.workspaceState.update("airlock.pairedPublicKey", undefined);
 
             updatePairingStatusBar(context);
-            out.appendLine("[Airlock] Unpaired successfully. Routing token and keys cleared. Auto-mode continues detecting.");
+            out.appendLine("[Airlock] Unpaired successfully. Routing token and keys cleared.");
             vscode.window.showInformationMessage("Airlock: Unpaired successfully.");
         })
     );
@@ -605,37 +737,18 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand("airlock.login", async () => {
             if (!deviceAuth) { deviceAuth = new DeviceAuth(context.secrets); }
-            const success = await deviceAuth.login();
+            const success = await deviceAuth.login(endpoint?.url);
             if (success) {
                 updateSignInStatusBar(signInStatusBarItem, { status: "signed-in" });
                 await checkAndUpdateQuota(signInStatusBarItem, out);
                 _refreshTimer?.dispose();
                 _refreshTimer = deviceAuth.startRefreshTimer();
 
-                // Restart pipe proxy with current endpoint and auth
-                if (endpoint) {
-                    _pipeProxy?.stop();
-                    _pipeProxy = null;
-                    const pipeName = NamedPipeProxy.getPipeName(enforcerId);
-                    _pipeProxy = new NamedPipeProxy({
-                        enforcerId,
-                        gatewayUrl: endpoint.url,
-                        localSecret: LOCAL_SECRET,
-                        auth: () => deviceAuth,
-                        getEncryptionKey: () => getEncryptionKey(context),
-                        log: (msg) => out.appendLine(`[Airlock Pipe] ${msg}`),
-                        onQuotaExceeded: (errorCode) => {
-                            out.appendLine(`[Airlock Pipe] ⚠ Quota exceeded event: ${errorCode}`);
-                            updateSignInStatusBar(signInStatusBarItem, {
-                                status: "quota-warning",
-                                workspacesUsed: -1, workspacesLimit: -1,
-                            });
-                            vscode.window.showWarningMessage(
-                                `Airlock: Plan quota exceeded (${errorCode}). Requests are being allowed (fail-open) but you may need to upgrade your plan.`
-                            );
-                        },
+                // Update all workspace proxies with current auth
+                for (const [, ctx] of _workspaceContexts) {
+                    ctx.proxy?.updateOptions({
+                        gatewayUrl: endpoint?.url ?? "",
                     });
-                    try { await _pipeProxy.start(); } catch { /* non-fatal */ }
                 }
 
                 if (presenceClient && endpoint) {
@@ -654,7 +767,7 @@ export function activate(context: vscode.ExtensionContext) {
                 _refreshTimer?.dispose(); _refreshTimer = null;
                 presenceClient?.disconnect();
                 updateSignInStatusBar(signInStatusBarItem, { status: "not-signed-in" });
-                vscode.window.showInformationMessage("Airlock: Signed out. Gate script will now fail open until you sign in again.");
+                vscode.window.showInformationMessage("Airlock: Signed out. Hooks will now apply fail mode until you sign in again.");
             }
         })
     );
@@ -696,7 +809,6 @@ async function checkAndUpdateQuota(
     _item: vscode.StatusBarItem,
     _out: vscode.OutputChannel
 ): Promise<void> {
-    // Periodic quota check via GET /v1/subscription/ through Gateway proxy.
     if (!deviceAuth?.isLoggedIn || !endpoint) { return; }
     try {
         const resp = await fetch(`${endpoint.url}/v1/subscription/`, {
@@ -718,8 +830,52 @@ async function checkAndUpdateQuota(
     } catch (e) { _out.appendLine(`[Airlock Quota] Error: ${e}`); }
 }
 
-function startQuotaTimer(item: vscode.StatusBarItem, out: vscode.OutputChannel): { dispose(): void } {
+/** Start a periodic quota check timer (every 5 minutes). */
+function startQuotaTimer(
+    item: vscode.StatusBarItem,
+    out: vscode.OutputChannel
+): { dispose(): void } {
     if (_quotaTimer) { clearInterval(_quotaTimer); }
-    _quotaTimer = setInterval(() => { checkAndUpdateQuota(item, out); }, 5 * 60 * 1000);
+    _quotaTimer = setInterval(() => {
+        checkAndUpdateQuota(item, out);
+    }, 5 * 60 * 1000);
     return { dispose: () => { if (_quotaTimer) { clearInterval(_quotaTimer); _quotaTimer = null; } } };
+}
+
+/** Check if .windsurf is tracked in git and warn (v3 §17). */
+function checkGitSafety(out: vscode.OutputChannel): void {
+    const ws = vscode.workspace.workspaceFolders?.[0];
+    if (!ws) { return; }
+
+    const gitignorePath = path.join(ws.uri.fsPath, ".gitignore");
+    let isWindsurfIgnored = false;
+
+    if (fs.existsSync(gitignorePath)) {
+        try {
+            const content = fs.readFileSync(gitignorePath, "utf8");
+            const lines = content.split("\n").map(l => l.trim());
+            isWindsurfIgnored = lines.some(l =>
+                l === ".windsurf" || l === ".windsurf/" || l === ".windsurf/**" || l === "/.windsurf" || l === "/.windsurf/"
+            );
+        } catch { /* non-fatal */ }
+    }
+
+    if (!isWindsurfIgnored) {
+        out.appendLine("[Airlock] ⚠ .windsurf/ not found in .gitignore — bootstrap scripts may be tracked in git.");
+        vscode.window.showWarningMessage(
+            "Airlock: The .windsurf/ directory is not in .gitignore. Consider adding it to prevent bootstrap scripts from being tracked.",
+            "Add to .gitignore"
+        ).then(choice => {
+            if (choice === "Add to .gitignore") {
+                try {
+                    if (fs.existsSync(gitignorePath)) {
+                        fs.appendFileSync(gitignorePath, "\n# Airlock bootstrap\n.windsurf/\n");
+                    } else {
+                        fs.writeFileSync(gitignorePath, "# Airlock bootstrap\n.windsurf/\n", "utf8");
+                    }
+                    out.appendLine("[Airlock] ✓ Added .windsurf/ to .gitignore");
+                } catch { /* non-fatal */ }
+            }
+        });
+    }
 }

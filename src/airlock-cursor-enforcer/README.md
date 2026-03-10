@@ -81,6 +81,13 @@ Cursor's hooks mechanism only fully respects the hook decision when run mode is 
 - **Circuit breaker** — 3 consecutive errors → auto-mode disables
 - **Timeout enforcement** — Configurable; default 60 seconds
 
+## Changelog
+
+### v0.3.0
+- **Security hardening** — Verbose approval logs gated behind `diagnosticMode`; routing tokens masked in logs
+- **TLS fix** — All HTTP clients now respect `allowSelfSignedCerts` setting
+- **Diagnostic mode** — Approval request details only logged when `airlock.diagnosticMode` is enabled
+
 ## Platform Support
 
 Windows ✅ · macOS ✅ · Linux ✅

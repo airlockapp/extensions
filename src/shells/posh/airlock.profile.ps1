@@ -52,6 +52,12 @@ function Invoke-AirlockAcceptLine {
         [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
         return
     }
+    # Don't intercept airlock-cli's own commands (prevents recursive blocking)
+    $cliName = [System.IO.Path]::GetFileNameWithoutExtension($env:AIRLOCK_CLI)
+    if ($buffer -match "^(\s*$([regex]::Escape($env:AIRLOCK_CLI))(\s|$)|\s*$([regex]::Escape($cliName))(\s|$))") {
+        [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
+        return
+    }
 
     $rc = Invoke-AirlockApproval -Command $buffer
 

@@ -95,7 +95,7 @@ The extension connects to Antigravity's Electron webview via CDP, injects JavaSc
 - **Default (`false`):** Standard certificate validation — connections to Aspire dev certs will fail
 - **Enabled (`true`):** Bypasses certificate validation — **only for local development**
 
-> **Note:** `endpointResolver.ts` and `pairingClient.ts` always use `rejectUnauthorized: false` for local endpoint probing. This is intentional — probing is local-only and never carries auth tokens.
+All HTTP clients (`http`/`https` module and `fetch` calls) inherit this global setting. No individual file overrides it.
 
 ## Project Structure
 
