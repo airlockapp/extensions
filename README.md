@@ -1,6 +1,6 @@
 # Airlock Extensions
 
-IDE enforcer extensions and CLI for **[Airlock](https://github.com/airlockapp/airlock)** — the cryptographically enforced approval gateway for AI agents.
+IDE enforcer extensions and CLI for **Airlock** — the cryptographically enforced approval gateway for AI agents.
 
 These extensions intercept AI agent actions before execution and route them through a mobile approval flow, ensuring no sensitive or high-impact action runs without an explicitly signed human decision.
 
@@ -21,13 +21,13 @@ Airlock implements **[HARP](https://harp-protocol.github.io/)** — the Human Au
 
 This repository includes a **HARP specification draft suite** (v0.2) under `samples/harp/`:
 
-| Area | Location | Description |
-|------|----------|-------------|
-| **Core** | `samples/harp/src/spec/core/` | Artifact canonicalization, hashing, decision signing, replay protection |
-| **Gateway** | `samples/harp/src/spec/gateway/` | HTTP binding, artifact submit, decision wait, schemas |
-| **Prompt / Session** | `samples/harp/src/spec/prompt/`, `session/` | Prompt and session message types |
-| **Infrastructure** | `samples/harp/src/spec/infrastructure/` | KEYMGMT, THREATMODEL, TRANSPORT, COMPLIANCE |
-| **Governance** | `samples/harp/src/spec/governance/` | Governance and lifecycle |
+| Area                 | Location                                    | Description                                                             |
+| -------------------- | ------------------------------------------- | ----------------------------------------------------------------------- |
+| **Core**             | `samples/harp/src/spec/core/`               | Artifact canonicalization, hashing, decision signing, replay protection |
+| **Gateway**          | `samples/harp/src/spec/gateway/`            | HTTP binding, artifact submit, decision wait, schemas                   |
+| **Prompt / Session** | `samples/harp/src/spec/prompt/`, `session/` | Prompt and session message types                                        |
+| **Infrastructure**   | `samples/harp/src/spec/infrastructure/`     | KEYMGMT, THREATMODEL, TRANSPORT, COMPLIANCE                             |
+| **Governance**       | `samples/harp/src/spec/governance/`         | Governance and lifecycle                                                |
 
 Enforcers and the CLI align with HARP-CORE (artifact hash, decision verification, E2E encryption), the Gateway HTTP binding, and HARP key/encryption practices. See [samples/harp/src/spec/README.md](samples/harp/src/spec/README.md) for the full spec layout.
 
@@ -35,13 +35,13 @@ Enforcers and the CLI align with HARP-CORE (artifact hash, decision verification
 
 ## Extensions
 
-| Extension | IDE | Interception Method |
-|-----------|-----|---------------------|
-| **[Airlock Cursor Enforcer](src/airlock-cursor-enforcer/)** | Cursor | Hooks (pre-tool-use gate) |
-| **[Airlock Windsurf Enforcer](src/airlock-windsurf-enforcer/)** | Windsurf | Hooks (pre-tool-use gate) |
-| **[Airlock Copilot Enforcer](src/airlock-copilot-enforcer/)** | VS Code (GitHub Copilot) | Hooks (pre-tool-use gate) |
-| **[Airlock Antigravity Enforcer](src/airlock-antigravity-enforcer/)** | VS Code (Google Antigravity) | CDP (Chrome DevTools Protocol) |
-| **[Airlock CLI](src/airlock-cli/)** | Any shell | CLI (`sign-in`, `pair`, `approve`) — use with [shell plugins](src/shells/) (Bash, Zsh, PowerShell) |
+| Extension                                                             | IDE                          | Interception Method                                                                                |
+| --------------------------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------- |
+| **[Airlock Cursor Enforcer](src/airlock-cursor-enforcer/)**           | Cursor                       | Hooks (pre-tool-use gate)                                                                          |
+| **[Airlock Windsurf Enforcer](src/airlock-windsurf-enforcer/)**       | Windsurf                     | Hooks (pre-tool-use gate)                                                                          |
+| **[Airlock Copilot Enforcer](src/airlock-copilot-enforcer/)**         | VS Code (GitHub Copilot)     | Hooks (pre-tool-use gate)                                                                          |
+| **[Airlock Antigravity Enforcer](src/airlock-antigravity-enforcer/)** | VS Code (Google Antigravity) | CDP (Chrome DevTools Protocol)                                                                     |
+| **[Airlock CLI](src/airlock-cli/)**                                   | Any shell                    | CLI (`sign-in`, `pair`, `approve`) — use with [shell plugins](src/shells/) (Bash, Zsh, PowerShell) |
 
 ### Shared Capabilities
 
@@ -101,10 +101,10 @@ airlock-extensions/
 
 VSIX packages are placed in:
 
-| Mode | Output Directory | Naming |
-|------|-----------------|--------|
-| **dev** | `dist/dev/` | `airlock-*-enforcer-dev-0.3.0.vsix` |
-| **prod** | `dist/prod/` | `airlock-*-enforcer-0.3.0.vsix` |
+| Mode     | Output Directory | Naming                              |
+| -------- | ---------------- | ----------------------------------- |
+| **dev**  | `dist/dev/`      | `airlock-*-enforcer-dev-0.3.0.vsix` |
+| **prod** | `dist/prod/`     | `airlock-*-enforcer-0.3.0.vsix`     |
 
 ### Install a Built Extension
 
@@ -135,7 +135,6 @@ See the `DEVELOPMENT.md` file in each extension folder for extension-specific no
 
 ## Related
 
-- **[Airlock](https://github.com/airlockapp/airlock)** — Main platform (Gateway, Backend, Admin, Mobile Approver)
 - **[HARP Protocol](https://harp-protocol.github.io/)** — Human Authorization & Review Protocol (underlying spec); draft suite and samples live in [samples/harp/](samples/harp/)
 
 ---
