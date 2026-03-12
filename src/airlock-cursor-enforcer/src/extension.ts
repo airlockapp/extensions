@@ -138,7 +138,8 @@ export function activate(context: vscode.ExtensionContext) {
         toggleItem,
         approvalItem,
         context,
-        () => endpoint
+        () => endpoint,
+        () => deviceAuth?.token
     );
     context.subscriptions.push(autoMode);
 
@@ -191,6 +192,7 @@ export function activate(context: vscode.ExtensionContext) {
                     `Airlock: Plan quota exceeded (${errorCode}). You may need to upgrade your plan.`
                 );
             },
+            isAutoModeEnabled: () => autoMode.isEnabled,
         }, pipeName);
 
         try {

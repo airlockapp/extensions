@@ -309,7 +309,7 @@ function verifyDecisionSignature(
 /**
  * HTTP(S) request. Returns parsed JSON body or null for 204.
  */
-function httpRequest(method: string, url: string, body?: object, abortSignal?: AbortSignal): Promise<unknown> {
+function httpRequest(method: string, url: string, body?: object, abortSignal?: AbortSignal, authToken?: string): Promise<unknown> {
     return new Promise((resolve, reject) => {
         if (abortSignal?.aborted) {
             reject(new Error("Aborted"));
@@ -320,18 +320,21 @@ function httpRequest(method: string, url: string, body?: object, abortSignal?: A
         const parsed = new URL(url);
         const transport = parsed.protocol === "https:" ? https : http;
 
+        const reqHeaders: Record<string, string | number> = data
+            ? {
+                "Content-Type": "application/json",
+                "Content-Length": Buffer.byteLength(data),
+            }
+            : {};
+        if (authToken) { reqHeaders["Authorization"] = `Bearer ${authToken}`; }
+
         const req = transport.request(
             {
                 hostname: parsed.hostname,
                 port: parsed.port,
                 path: parsed.pathname + parsed.search,
                 method,
-                headers: data
-                    ? {
-                        "Content-Type": "application/json",
-                        "Content-Length": Buffer.byteLength(data),
-                    }
-                    : {},
+                headers: reqHeaders,
                 timeout: 650_000, // slightly over max poll window (10 min)
             },
             (res) => {
@@ -392,11 +395,12 @@ function sleep(ms: number): Promise<void> {
 export async function withdrawExchange(
     endpointUrl: string,
     requestId: string,
-    out: vscode.OutputChannel
+    out: vscode.OutputChannel,
+    authToken?: string
 ): Promise<void> {
     try {
         const url = `${endpointUrl.replace(/\/$/, "")}/v1/exchanges/${requestId}/withdraw`;
-        await httpRequest("POST", url);
+        await httpRequest("POST", url, undefined, undefined, authToken);
         out.appendLine(`[Airlock] ✓ Withdrawn exchange: ${requestId}`);
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

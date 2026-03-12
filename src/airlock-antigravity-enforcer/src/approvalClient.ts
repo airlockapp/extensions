@@ -4,6 +4,7 @@ import * as https from "https";
 import * as crypto from "crypto";
 import { encryptPayload, getEncryptionKey, getRoutingToken, clearRoutingToken, type EncryptedPayload } from "./crypto.js";
 import { getPairedKeys } from "./pairingClient.js";
+import { evaluateDndForAction } from "./dndClient.js";
 
 export interface ApprovalResult {
     decision: "approve" | "reject";
@@ -60,6 +61,56 @@ export async function requestApproval(
 
     // Build HARP artifact.submit envelope
     const workspaceName = ws?.name || "unknown";
+
+    // Before building the artifact, check effective DND policies for this action.
+    const enforcerId =
+        context?.workspaceState.get<string>("airlock.enforcerId")
+        || vscode.workspace.getConfiguration("airlock").get<string>("enforcerId")
+        || "enforcer-vscode";
+
+    const dndMatch = await evaluateDndForAction(
+        {
+            endpointUrl,
+            workspaceId: workspaceName,
+            enforcerId,
+            sessionId: vscode.env.sessionId,
+            authToken,
+        },
+        {
+            actionType,
+            commandText,
+        },
+        diagnosticMode ? out : undefined
+    );
+
+    if (dndMatch) {
+        const isApprove = dndMatch.decision === "approve";
+
+        out.appendLine(
+            `[Airlock] DND in effect: ${dndMatch.scope} policy (${dndMatch.policyMode}) → ${isApprove ? "APPROVE" : "REJECT"}`
+        );
+
+        // Fire-and-forget audit artifact so mobile can see bypassed commands
+        // via the Gateway's DND audit path.
+        submitDndAuditArtifact(
+            endpointUrl,
+            workspaceName,
+            enforcerId,
+            actionType,
+            commandText,
+            buttonText,
+            authToken,
+            context
+        ).catch(() => { /* non-fatal */ });
+
+        return {
+            decision: isApprove ? "approve" : "reject",
+            reason: "Decision from Do Not Disturb policy",
+            requestId,
+        };
+    } else if (diagnosticMode) {
+        out.appendLine("[Airlock] DND: no matching policy for this action");
+    }
 
     // Sensitive display data — goes INSIDE encrypted ciphertext, NOT in cleartext metadata
     const plaintextContent = JSON.stringify({
@@ -127,10 +178,8 @@ export async function requestApproval(
         msgType: "artifact.submit",
         requestId,
         createdAt: new Date().toISOString(),
-        sender: {
-            enforcerId: context?.workspaceState.get<string>("airlock.enforcerId")
-                || vscode.workspace.getConfiguration("airlock").get<string>("enforcerId")
-                || "enforcer-vscode"
+            sender: {
+                enforcerId,
         },
         body: artifactBody,
     };
@@ -271,9 +320,8 @@ function parseDecision(
         }
         out?.appendLine(`[Airlock] ✓ Decision signature verified for signerKeyId=${signerKeyId}`);
     } else if (context) {
-        // Signature fields missing — fail closed per HARP-CORE §6.3
-        out?.appendLine(`[Airlock] ⚠ Decision missing signature fields (signerKeyId=${signerKeyId ? 'present' : 'missing'}, signature=${signature ? 'present' : 'missing'}, nonce=${nonce ? 'present' : 'missing'}, artifactHash=${artifactHash ? 'present' : 'missing'})`);
-        out?.appendLine(`[Airlock] ✗ Rejecting unsigned decision per HARP-CORE §6.3`);
+        // Signature fields missing — reject per HARP-CORE §6.3
+        out?.appendLine(`[Airlock] ✗ HARP_ERR_MISSING_SIGNATURE: Decision missing required signature fields`);
         return null;
     }
     // If no context available, allow through (legacy/testing mode) with warning
@@ -453,6 +501,73 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * Submit a short-lived audit artifact for DND-bypassed commands so they are
+ * visible in the mobile app's history without blocking execution.
+ */
+async function submitDndAuditArtifact(
+    endpointUrl: string,
+    workspaceName: string,
+    enforcerId: string,
+    actionType: string,
+    commandText: string,
+    buttonText: string,
+    authToken?: string,
+    context?: vscode.ExtensionContext
+): Promise<void> {
+    try {
+        if (!context) {
+            return;
+        }
+
+        const encryptionKey = await getEncryptionKey(context);
+        if (!encryptionKey) {
+            return;
+        }
+
+        const plaintextContent = JSON.stringify({
+            actionType,
+            commandText,
+            buttonText: `DND audit: ${buttonText}`,
+            workspace: workspaceName,
+            repoName: "",
+            source: "antigravity-enforcer-dnd",
+        });
+
+        const ciphertext: EncryptedPayload = encryptPayload(plaintextContent, encryptionKey);
+
+        const metadata: Record<string, string> = {
+            repoName: "",
+            workspaceName,
+            dndAudit: "true",
+        };
+
+        const artifactBody = {
+            artifactType: "command-approval",
+            artifactHash: crypto.createHash("sha256")
+                .update(`dnd-audit:${actionType}:${commandText}:${Date.now()}`)
+                .digest("hex"),
+            ciphertext,
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            metadata,
+        };
+
+        const envelope = {
+            msgId: "msg-" + crypto.randomUUID(),
+            msgType: "artifact.submit",
+            requestId: "audit-" + crypto.randomUUID(),
+            createdAt: new Date().toISOString(),
+            sender: { enforcerId },
+            body: artifactBody,
+        };
+
+        const submitUrl = `${endpointUrl}/v1/artifacts`;
+        await httpRequest("POST", submitUrl, envelope, undefined, authToken);
+    } catch {
+        // Audit failures are non-fatal and must not affect command outcome.
+    }
+}
+
+/**
  * Withdraw a pending approval request from the Gateway.
  * Called when the user takes manual action (clicks the button themselves)
  * and the pending exchange is no longer needed.
@@ -461,12 +576,13 @@ function sleep(ms: number): Promise<void> {
 export async function withdrawExchange(
     endpointUrl: string,
     requestId: string,
-    out: vscode.OutputChannel
+    out: vscode.OutputChannel,
+    authToken?: string
 ): Promise<void> {
     try {
         const url = `${endpointUrl.replace(/\/$/, "")}/v1/exchanges/${requestId}/withdraw`;
         out.appendLine(`[Airlock] 🔄 Withdrawing exchange: ${requestId}`);
-        await httpRequest("POST", url);
+        await httpRequest("POST", url, undefined, undefined, authToken);
         out.appendLine(`[Airlock] ✓ Exchange withdrawn: ${requestId}`);
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

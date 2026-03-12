@@ -213,7 +213,7 @@ export class AutoModeController implements vscode.Disposable {
                 } catch (clickErr) {
                     // Button is gone → user took manual action. Withdraw the exchange.
                     this._out.appendLine(`[Airlock Auto] Button gone (manual action?) — withdrawing exchange ${requestId}`);
-                    void withdrawExchange(endpoint.url, requestId, this._out);
+                    void withdrawExchange(endpoint.url, requestId, this._out, this._getAuthToken());
                     updateApprovalStatusBar(this._approvalItem, "withdrawn");
                     setTimeout(() => updateApprovalStatusBar(this._approvalItem, "idle"), 5000);
                     return;
@@ -230,7 +230,7 @@ export class AutoModeController implements vscode.Disposable {
                     }
                 } catch (clickErr) {
                     this._out.appendLine(`[Airlock Auto] Reject button gone (manual action?) — withdrawing exchange ${requestId}`);
-                    void withdrawExchange(endpoint.url, requestId, this._out);
+                    void withdrawExchange(endpoint.url, requestId, this._out, this._getAuthToken());
                     updateApprovalStatusBar(this._approvalItem, "withdrawn");
                     setTimeout(() => updateApprovalStatusBar(this._approvalItem, "idle"), 5000);
                     return;
@@ -263,7 +263,7 @@ export class AutoModeController implements vscode.Disposable {
 
             if (isAbort) {
                 this._out.appendLine(`[Airlock Auto] ⏹ Approval ABORTED (manual action detected) — withdrawing ${requestId}`);
-                void withdrawExchange(endpoint.url, requestId, this._out);
+                void withdrawExchange(endpoint.url, requestId, this._out, this._getAuthToken());
                 updateApprovalStatusBar(this._approvalItem, "withdrawn");
                 setTimeout(() => updateApprovalStatusBar(this._approvalItem, "idle"), 5000);
                 return; // Don't count as error
@@ -275,7 +275,7 @@ export class AutoModeController implements vscode.Disposable {
             );
             // Timeout or network error — withdraw to clean up inbox
             this._out.appendLine(`[Airlock Auto] Withdrawing exchange ${requestId} due to error`);
-            void withdrawExchange(endpoint.url, requestId, this._out);
+            void withdrawExchange(endpoint.url, requestId, this._out, this._getAuthToken());
 
             updateApprovalStatusBar(this._approvalItem, "error");
             // Auto-hide after 5 seconds

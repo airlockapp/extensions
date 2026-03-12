@@ -149,9 +149,11 @@ export class CdpDetectionStrategy implements DetectionStrategy {
         }
         const js = `(function(){
             const id = ${JSON.stringify(pending.id)};
+            const target = ${JSON.stringify(pending.buttonText.toLowerCase())};
+            const getText = window.__airlockGetButtonText || function(b){ return (b.textContent||"").trim().toLowerCase(); };
             const btns = document.querySelectorAll('button, [role="button"], a.button');
             for (const b of btns) {
-                if (b.dataset.__airlockId === id || b.textContent.trim().toLowerCase() === ${JSON.stringify(pending.buttonText.toLowerCase())}) {
+                if (b.dataset.__airlockId === id || getText(b) === target) {
                     b.dispatchEvent(new MouseEvent('click', {view:window,bubbles:true,cancelable:true}));
                     return 'clicked';
                 }

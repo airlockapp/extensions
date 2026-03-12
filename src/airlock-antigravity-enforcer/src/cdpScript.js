@@ -277,6 +277,8 @@
         return { docCount: docs.length, buttonCount: allButtons.length, buttons: allButtons };
     };
 
+    window.__airlockGetButtonText = getButtonOwnText;
+
     window.__airlockStop = function () {
         running = false;
     };

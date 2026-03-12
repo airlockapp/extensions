@@ -33,7 +33,8 @@ export class AutoModeController implements vscode.Disposable {
         private readonly _toggleItem: vscode.StatusBarItem,
         private readonly _approvalItem: vscode.StatusBarItem,
         private readonly _context: vscode.ExtensionContext,
-        private _getEndpoint: () => EndpointInfo | null
+        private _getEndpoint: () => EndpointInfo | null,
+        private _getAuthToken: () => string | undefined = () => undefined
     ) {
         this._enabled = this._context.workspaceState.get("airlock.autoMode", false);
     }
@@ -184,7 +185,7 @@ export class AutoModeController implements vscode.Disposable {
                 } catch (clickErr) {
                     // Button is gone → user took manual action. Withdraw the exchange.
                     this._out.appendLine(`[Airlock Auto] Button gone (manual action?) — withdrawing exchange ${requestId}`);
-                    void withdrawExchange(endpoint.url, requestId, this._out);
+                    void withdrawExchange(endpoint.url, requestId, this._out, this._getAuthToken());
                     updateApprovalStatusBar(this._approvalItem, "withdrawn");
                     setTimeout(() => updateApprovalStatusBar(this._approvalItem, "idle"), 5000);
                     return;
@@ -201,7 +202,7 @@ export class AutoModeController implements vscode.Disposable {
                     }
                 } catch (clickErr) {
                     this._out.appendLine(`[Airlock Auto] Reject button gone (manual action?) — withdrawing exchange ${requestId}`);
-                    void withdrawExchange(endpoint.url, requestId, this._out);
+                    void withdrawExchange(endpoint.url, requestId, this._out, this._getAuthToken());
                     updateApprovalStatusBar(this._approvalItem, "withdrawn");
                     setTimeout(() => updateApprovalStatusBar(this._approvalItem, "idle"), 5000);
                     return;

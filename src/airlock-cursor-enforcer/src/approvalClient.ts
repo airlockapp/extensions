@@ -4,6 +4,7 @@ import * as https from "https";
 import * as crypto from "crypto";
 import { encryptPayload, getEncryptionKey, getRoutingToken, clearRoutingToken, type EncryptedPayload } from "./crypto.js";
 import { getPairedKeys } from "./pairingClient.js";
+import { evaluateDndForAction } from "./dndClient.js";
 
 export interface ApprovalResult {
     decision: "approve" | "reject";
@@ -35,6 +36,43 @@ export async function requestApproval(
 
     // Build HARP artifact.submit envelope
     const workspaceName = ws?.name || "unknown";
+
+    // Before building the artifact, check effective DND policies for this action.
+    const enforcerId =
+        context?.workspaceState.get<string>("airlock.enforcerId")
+        || vscode.workspace.getConfiguration("airlock").get<string>("enforcerId")
+        || "enforcer-vscode";
+
+    const dndMatch = await evaluateDndForAction(
+        {
+            endpointUrl,
+            workspaceId: workspaceName,
+            enforcerId,
+            sessionId: vscode.env.sessionId
+        },
+        {
+            actionType,
+            commandText
+        }
+    );
+
+    if (dndMatch) {
+        const isReject = dndMatch.decision === "reject";
+        const reason = isReject
+            ? "Auto-rejected by DND policy."
+            : "Auto-approved by DND policy.";
+
+        if (isReject) {
+            vscode.window.showWarningMessage(
+                `Airlock: "${buttonText}" auto-denied by DND policy.`
+            );
+        }
+        return {
+            decision: dndMatch.decision,
+            reason,
+            requestId
+        };
+    }
 
     // Sensitive display data — goes INSIDE encrypted ciphertext, NOT in cleartext metadata
     const plaintextContent = JSON.stringify({
@@ -100,9 +138,7 @@ export async function requestApproval(
         requestId,
         createdAt: new Date().toISOString(),
         sender: {
-            enforcerId: context?.workspaceState.get<string>("airlock.enforcerId")
-                || vscode.workspace.getConfiguration("airlock").get<string>("enforcerId")
-                || "enforcer-vscode"
+            enforcerId
         },
         body: artifactBody,
     };
@@ -309,7 +345,7 @@ function verifyDecisionSignature(
 /**
  * HTTP(S) request. Returns parsed JSON body or null for 204.
  */
-function httpRequest(method: string, url: string, body?: object, abortSignal?: AbortSignal): Promise<unknown> {
+function httpRequest(method: string, url: string, body?: object, abortSignal?: AbortSignal, authToken?: string): Promise<unknown> {
     return new Promise((resolve, reject) => {
         if (abortSignal?.aborted) {
             reject(new Error("Aborted"));
@@ -320,18 +356,21 @@ function httpRequest(method: string, url: string, body?: object, abortSignal?: A
         const parsed = new URL(url);
         const transport = parsed.protocol === "https:" ? https : http;
 
+        const reqHeaders: Record<string, string | number> = data
+            ? {
+                "Content-Type": "application/json",
+                "Content-Length": Buffer.byteLength(data),
+            }
+            : {};
+        if (authToken) { reqHeaders["Authorization"] = `Bearer ${authToken}`; }
+
         const req = transport.request(
             {
                 hostname: parsed.hostname,
                 port: parsed.port,
                 path: parsed.pathname + parsed.search,
                 method,
-                headers: data
-                    ? {
-                        "Content-Type": "application/json",
-                        "Content-Length": Buffer.byteLength(data),
-                    }
-                    : {},
+                headers: reqHeaders,
                 timeout: 650_000, // slightly over max poll window (10 min)
             },
             (res) => {
@@ -392,11 +431,12 @@ function sleep(ms: number): Promise<void> {
 export async function withdrawExchange(
     endpointUrl: string,
     requestId: string,
-    out: vscode.OutputChannel
+    out: vscode.OutputChannel,
+    authToken?: string
 ): Promise<void> {
     try {
         const url = `${endpointUrl.replace(/\/$/, "")}/v1/exchanges/${requestId}/withdraw`;
-        await httpRequest("POST", url);
+        await httpRequest("POST", url, undefined, undefined, authToken);
         out.appendLine(`[Airlock] ✓ Withdrawn exchange: ${requestId}`);
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

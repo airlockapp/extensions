@@ -33,6 +33,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { DeviceAuth } from './deviceAuth.js';
 import { encryptPayload, type EncryptedPayload } from './crypto.js';
+import { evaluateDndForAction } from './dndClient.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const SUPPORTED_PROTOCOL_VERSION = 1;
@@ -83,6 +84,7 @@ export interface ProxyOptions {
     /** Verbose log gated behind diagnosticMode setting. */
     logDiag: (msg: string) => void;
     onQuotaExceeded?: (errorCode: string) => void;
+    isAutoModeEnabled?: () => boolean;
 }
 
 export class NamedPipeProxy {
@@ -117,9 +119,11 @@ export class NamedPipeProxy {
     /** Returns the pipe name for a given workspace hash (v3 §6). */
     static getPipeName(workspaceHash: string): string {
         if (process.platform === 'win32') {
-            return `\\\\.\\pipe\\airlock-ws-${workspaceHash}`;
+            // Use a Copilot-specific suffix so multiple enforcers (Cursor, Windsurf, etc.)
+            // can coexist in the same workspace without pipe name collisions.
+            return `\\\\.\\pipe\\airlock-ws-copilot-${workspaceHash}`;
         }
-        return `/tmp/airlock-ws-${workspaceHash}.sock`;
+        return `/tmp/airlock-ws-copilot-${workspaceHash}.sock`;
     }
 
     // ── Server lifecycle (v3 §7) ────────────────────────────────────────────
@@ -275,6 +279,13 @@ export class NamedPipeProxy {
 
         this._opts.log(`Event: ${event} | Action: ${commandLine || filePath || '?'}`);
 
+        // 4a. Auto-mode check — if OFF, allow immediately (enforcer is not gating)
+        if (this._opts.isAutoModeEnabled && !this._opts.isAutoModeEnabled()) {
+            this._opts.log(`Auto-mode OFF — allowing "${commandLine || event}" without gateway approval`);
+            this._sendResponse(socket, { permission: 'allow' });
+            return;
+        }
+
         // 5. Self-protection: block tampering with Airlock files
         const cmdLower = commandLine.toLowerCase();
         const toolInputStr = (typeof normalizedPayload.input === 'string'
@@ -319,6 +330,55 @@ export class NamedPipeProxy {
         const msgId = `msg-${crypto.randomUUID()}`;
         const toolName = (normalizedPayload.toolName || '') as string;
         const actionType = TERMINAL_TOOLS.includes(toolName.toLowerCase()) ? 'terminal_command' : 'agent_step';
+
+        // 9a. Evaluate DND policies before building & submitting artifact.
+        if (commandLine) {
+            try {
+                const dndMatch = await evaluateDndForAction(
+                    {
+                        endpointUrl: this._opts.gatewayUrl,
+                        workspaceId: this._opts.workspaceName,
+                        enforcerId: this._opts.enforcerId,
+                        authToken: token,
+                    },
+                    {
+                        actionType,
+                        commandText: commandLine,
+                    }
+                );
+
+                if (dndMatch) {
+                    const isApprove = dndMatch.decision === 'approve';
+
+                    // Fire-and-forget audit artifact so mobile can see bypassed commands.
+                    this._submitDndAuditArtifact(
+                        token,
+                        routingToken,
+                        actionType,
+                        commandLine,
+                        effectiveRepoName,
+                        event,
+                        dndMatch.decision,
+                        toolName
+                    ).catch(() => { /* non-fatal */ });
+
+                    const message = isApprove
+                        ? 'Action auto-approved by DND policy.'
+                        : 'Action auto-denied by DND policy.';
+
+                    this._sendResponse(socket, {
+                        permission: isApprove ? 'allow' : 'deny',
+                        message,
+                        agentMessage: !isApprove
+                            ? 'This action was automatically denied by a DND policy you configured in the Airlock mobile app.'
+                            : undefined,
+                    });
+                    return;
+                }
+            } catch {
+                // On any DND evaluation error, fall back to normal approval flow
+            }
+        }
 
         const plaintextContent = JSON.stringify({
             actionType,
@@ -523,6 +583,79 @@ export class NamedPipeProxy {
         } catch (err) {
             this._opts.log(`Gateway fetch error: ${err}`);
             return { status: 503, body: '{"error":"gateway_unreachable"}' };
+        }
+    }
+
+    /**
+     * Submit a short-lived audit artifact for DND-bypassed commands so they are
+     * visible in the mobile app's history without blocking execution.
+     */
+    private async _submitDndAuditArtifact(
+        token: string,
+        routingToken: string,
+        actionType: string,
+        commandLine: string,
+        effectiveRepoName: string,
+        event: string,
+        decision: "approve" | "reject",
+        toolName: string
+    ): Promise<void> {
+        try {
+            const encKey = await this._opts.getEncryptionKey();
+            if (!encKey) {
+                return;
+            }
+
+            const plaintextContent = JSON.stringify({
+                actionType,
+                commandText: commandLine,
+                buttonText: `DND ${decision === "approve" ? "APPROVE" : "DENY"} audit`,
+                workspace: this._opts.workspaceName,
+                repoName: effectiveRepoName,
+                source: 'copilot-hooks-dnd',
+                hookEvent: event,
+                toolName: toolName || undefined,
+                dndDecision: decision,
+            });
+
+            const ciphertext = encryptPayload(plaintextContent, encKey);
+            const auditRequestId = `audit-${crypto.randomUUID()}`;
+            const msgId = `msg-${crypto.randomUUID()}`;
+
+            // Let gateway clamp/expire; request a short TTL (~1 minute).
+            const expiresAt = new Date(Date.now() + 60_000).toISOString();
+
+            const envelope = {
+                msgId,
+                msgType: 'artifact.submit',
+                requestId: auditRequestId,
+                createdAt: new Date().toISOString(),
+                sender: { enforcerId: this._opts.enforcerId },
+                body: {
+                    artifactType: 'command-approval',
+                    artifactHash: crypto.createHash('sha256')
+                        .update(`dnd-audit:${actionType}:${commandLine}:${Date.now()}`)
+                        .digest('hex'),
+                    ciphertext,
+                    expiresAt,
+                    metadata: {
+                        repoName: effectiveRepoName,
+                        workspaceName: this._opts.workspaceName,
+                        routingToken,
+                        dndAudit: 'true',
+                        dndDecision: decision,
+                    },
+                },
+            };
+
+            await this._forwardToGateway(
+                'POST',
+                '/v1/artifacts',
+                token,
+                JSON.stringify(envelope)
+            );
+        } catch {
+            // Audit failures are non-fatal and must not affect command outcome.
         }
     }
 

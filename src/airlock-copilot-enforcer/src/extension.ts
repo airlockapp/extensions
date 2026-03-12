@@ -212,6 +212,7 @@ export function activate(context: vscode.ExtensionContext) {
                     `Airlock: Plan quota exceeded (${errorCode}). You may need to upgrade your plan.`
                 );
             },
+            isAutoModeEnabled: () => autoMode.isEnabled,
         }, pipeName);
 
         try {
