@@ -23,6 +23,7 @@
 - **Token refresh** — The CLI refreshes the access token automatically when it is close to expiry.
 - **Pairing** — Pair with the Airlock mobile app to get an encryption key and routing token; required for submitting artifacts.
 - **Approve** — Submit a command for approval, long-poll the gateway, verify the Ed25519 signature, and exit with a well-defined status code.
+- **DND-aware approvals** — Before submitting an artifact, the CLI checks **Do Not Disturb (DND)** policies via the same control plane as the IDE enforcers. When a matching DND rule exists, the CLI auto-approves / auto-denies locally and emits a short-lived **DND audit artifact** to `POST /v1/artifacts` (with `metadata.dndAudit = "true"`) so the mobile app shows a non-interactive history entry for the action.
 
 ---
 
@@ -89,7 +90,7 @@ airlock-cli approve \
 - **Stdin** — Not read; safe to use in pipelines or with interactive shells.
 - **Stdout** — No normal output; only progress or errors may go to **stderr**.
 - **Idempotency** — Each call uses a new `requestId`; no client-side idempotency key is exposed.
-- **Gateway flow** — Same as IDE enforcers: build encrypted artifact (AES-256-GCM), submit to `POST /v1/artifacts`, long-poll `GET /v1/exchanges/{requestId}/wait`, verify decision (Ed25519) with paired keys, then exit.
+- **Gateway flow** — Same as IDE enforcers: build encrypted artifact (AES-256-GCM), submit to `POST /v1/artifacts`, long-poll `GET /v1/exchanges/{requestId}/wait`, verify decision (Ed25519) with paired keys, then exit. If an applicable DND policy exists (from the mobile app), the CLI first queries `GET /v1/policy/dnd/effective` and may auto-approve/auto-deny without an interactive decision, while still emitting a short‑lived DND audit artifact to `POST /v1/artifacts` for history.
 
 ---
 

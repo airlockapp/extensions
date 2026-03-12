@@ -70,10 +70,66 @@ func BuildEnvelope(
 		"msgType":   "artifact.submit",
 		"requestId": requestID,
 		"createdAt": time.Now().UTC().Format(time.RFC3339),
-		"sender": map[string]string{
-			"enforcerId": enforcerID,
-		},
-		"body": body,
+		"sender":    map[string]string{"enforcerId": enforcerID},
+		"body":      body,
 	}
 	return envelope, artifactHash, nil
 }
+
+// BuildDndAuditEnvelope builds a short-lived DND audit artifact envelope.
+// This is used when a DND rule auto-approves/auto-denies an action so that
+// the mobile app can show a non-interactive history entry.
+func BuildDndAuditEnvelope(
+	requestID, enforcerID string,
+	payload *ApprovePayload,
+	encryptionKey []byte,
+	routingToken, workspaceName, dndDecision string,
+) (interface{}, error) {
+	plaintext, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	dataB64, nonceB64, tagB64, err := crypto.AESGCMEncrypt(encryptionKey, plaintext)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UnixMilli()
+	artifactHash := crypto.ArtifactHash("command-approval", payload.CommandText, now)
+	expiresAt := time.Now().Add(1 * time.Minute).UTC().Format(time.RFC3339)
+
+	metadata := map[string]string{
+		"workspaceName": workspaceName,
+		"repoName":      payload.RepoName,
+		"dndAudit":      "true",
+		"dndDecision":   dndDecision,
+	}
+	if routingToken != "" {
+		metadata["routingToken"] = routingToken
+	}
+
+	body := map[string]interface{}{
+		"artifactType": "command-approval",
+		"artifactHash": artifactHash,
+		"ciphertext": map[string]string{
+			"alg":   "AES-256-GCM",
+			"data":  dataB64,
+			"nonce": nonceB64,
+			"tag":   tagB64,
+		},
+		"expiresAt": expiresAt,
+		"metadata":  metadata,
+	}
+
+	envelope := map[string]interface{}{
+		"msgId":     "msg-" + requestID,
+		"msgType":   "artifact.submit",
+		"requestId": requestID,
+		"createdAt": time.Now().UTC().Format(time.RFC3339),
+		"sender":    map[string]string{"enforcerId": enforcerID},
+		"body":      body,
+	}
+	return envelope, nil
+}
+

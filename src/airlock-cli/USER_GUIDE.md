@@ -156,6 +156,24 @@ airlock-cli approve --command "git push" --timeout 120
 
 ---
 
+### How DND (Do Not Disturb) affects approve
+
+If you have enabled **workspace or command-level DND** in the Airlock mobile app, the CLI:
+
+- Looks up effective DND policies from the gateway using the same control plane as the IDE extensions:
+  - `GET /v1/policy/dnd/effective?enforcerId=...&workspaceId=...&sessionId=...`
+- If a matching rule says “auto-approve” or “auto-deny” for this command:
+  - The CLI **does not send a normal interactive approval request**.
+  - Instead, it auto-approves / auto-denies **locally**, then:
+    - Sends a short‑lived **DND audit artifact** to `POST /v1/artifacts` (marked with `dndAudit = "true"`), so you still see the command in the mobile app’s history.
+  - The exit codes are the same:
+    - `0` if the DND rule approves the command.
+    - `1` if the DND rule denies the command.
+
+If no DND rule applies, the normal interactive approval flow runs as described above.
+
+---
+
 ## Using the CLI from a script or wrapper
 
 The idea is: **run the CLI first; only run the real command if the CLI exits 0.**

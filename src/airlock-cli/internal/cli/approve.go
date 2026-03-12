@@ -4,10 +4,12 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/airlock/airlock-cli/internal/artifact"
 	"github.com/airlock/airlock-cli/internal/auth"
+	"github.com/airlock/airlock-cli/internal/dnd"
 	"github.com/airlock/airlock-cli/internal/gateway"
 	"github.com/airlock/airlock-cli/internal/store"
 	"github.com/airlock/airlock-cli/internal/verify"
@@ -61,15 +63,6 @@ func runApprove(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("auth: %w", err)
 	}
 
-	if secrets.EncryptionKey == "" || secrets.RoutingToken == "" {
-		return fmt.Errorf("not paired: run 'airlock-cli pair' and complete pairing on your mobile device")
-	}
-
-	keyBytes, err := base64.RawURLEncoding.DecodeString(secrets.EncryptionKey)
-	if err != nil {
-		return fmt.Errorf("invalid encryption key: %w", err)
-	}
-
 	enforcerID := cfg.EnforcerID
 	if enforcerID == "" {
 		enforcerID = "airlock-cli"
@@ -79,13 +72,85 @@ func runApprove(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	if diagnostic {
-		fmt.Fprintf(os.Stderr, "[diagnostic] gateway=%s timeout=%ds requestId=%s\n", url, approveTimeout, requestID)
-	}
-
 	workspaceName := approveCwd
 	if workspaceName == "" {
 		workspaceName = "cli"
+	}
+
+	if diagnostic {
+		fmt.Fprintf(os.Stderr, "[diagnostic] gateway=%s timeout=%ds requestId=%s workspace=%s\n", url, approveTimeout, requestID, workspaceName)
+	}
+
+	// Before building and submitting the artifact, evaluate DND policies for this action.
+	// Uses the same Gateway endpoint as approvals: GET /v1/policy/dnd/effective.
+	if secrets.EncryptionKey == "" || secrets.RoutingToken == "" {
+		return fmt.Errorf("not paired: run 'airlock-cli pair' and complete pairing on your mobile device")
+	}
+
+	keyBytes, err := base64.RawURLEncoding.DecodeString(secrets.EncryptionKey)
+	if err != nil {
+		return fmt.Errorf("invalid encryption key: %w", err)
+	}
+
+	gw := gateway.NewClient(url, token)
+
+	if match, err := dnd.EvaluateForAction(
+		url,
+		token,
+		enforcerID,
+		workspaceName,
+		approveSessionID,
+		dnd.Action{
+			ActionType:  "terminal_command",
+			CommandText: approveCommand,
+		},
+	); err == nil && match != nil {
+		decision := strings.ToLower(match.Decision)
+		if decision != "approve" && decision != "reject" {
+			decision = "reject"
+		}
+
+		if diagnostic {
+			fmt.Fprintf(os.Stderr, "[diagnostic] DND match: scope=%s mode=%s decision=%s\n", match.Scope, match.PolicyMode, decision)
+		}
+
+		// Fire-and-forget DND audit artifact so the mobile app shows a non-interactive history entry.
+		auditPayload := &artifact.ApprovePayload{
+			ActionType:  "command-approval",
+			CommandText: approveCommand,
+			ButtonText:  fmt.Sprintf("DND %s audit", strings.ToUpper(decision)),
+			Workspace:   workspaceName,
+			RepoName:    "",
+			Source:      "airlock-cli-dnd",
+			Shell:       approveShell,
+			Cwd:         approveCwd,
+			SessionID:   approveSessionID,
+			ShellPid:    approveShellPid,
+			Host:        approveHost,
+		}
+		if env, err := artifact.BuildDndAuditEnvelope(
+			requestID,
+			enforcerID,
+			auditPayload,
+			keyBytes,
+			secrets.RoutingToken,
+			workspaceName,
+			decision,
+		); err == nil {
+			_ = gw.SubmitArtifact(env)
+		}
+
+		if decision == "approve" {
+			if diagnostic {
+				fmt.Fprintln(os.Stderr, "[diagnostic] Auto-approved by DND policy")
+			}
+			exitWith(0)
+		}
+
+		if diagnostic {
+			fmt.Fprintln(os.Stderr, "[diagnostic] Auto-denied by DND policy")
+		}
+		exitWith(1)
 	}
 
 	payload := &artifact.ApprovePayload{
@@ -107,7 +172,6 @@ func runApprove(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	gw := gateway.NewClient(url, token)
 	if err := gw.SubmitArtifact(env); err != nil {
 		return fmt.Errorf("submit artifact: %w", err)
 	}
