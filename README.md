@@ -41,7 +41,6 @@ Enforcers and the CLI align with HARP-CORE (artifact hash, decision verification
 | **[Airlock Windsurf Enforcer](src/airlock-windsurf-enforcer/)**       | Windsurf                     | Hooks (pre-tool-use gate)                                                                          |
 | **[Airlock Copilot Enforcer](src/airlock-copilot-enforcer/)**         | VS Code (GitHub Copilot)     | Hooks (pre-tool-use gate)                                                                          |
 | **[Airlock Antigravity Enforcer](src/airlock-antigravity-enforcer/)** | VS Code (Google Antigravity) | CDP (Chrome DevTools Protocol)                                                                     |
-| **[Airlock Claude Code Enforcer](src/claude-code-enforcer/)**         | Claude Code CLI              | Hooks (pre-tool-use gate)                                                                          |
 | **[Airlock CLI](src/airlock-cli/)**                                   | Any shell                    | CLI (`sign-in`, `pair`, `approve`) — use with [shell plugins](src/shells/) (Bash, Zsh, PowerShell) |
 
 ### Shared Capabilities
@@ -56,26 +55,11 @@ All enforcers provide:
 - 🔗 **Presence tracking** via WebSocket
 - 🔄 **Token refresh** for long-running sessions
 
-### Claude Code Marketplace
+### Claude Code Plugin
 
-This repository doubles as a **Claude Code plugin marketplace**. To install the Airlock enforcer plugin for Claude Code:
+The Claude Code enforcer plugin has moved to its own dedicated repository:
 
-1. Add the marketplace (one-time):
-   ```bash
-   /plugin marketplace add airlockapp/extensions
-   ```
-
-2. Install the plugin:
-   ```bash
-   /plugin install airlock@airlock-extensions
-   ```
-
-3. To uninstall:
-   ```bash
-   /plugin uninstall airlock@airlock-extensions
-   ```
-
-See [src/claude-code-enforcer/INSTALL.md](src/claude-code-enforcer/INSTALL.md) for detailed setup (sign-in, pairing, secure storage, troubleshooting).
+👉 **[airlockapp/claude-plugins](https://github.com/airlockapp/claude-plugins)** — install via `/plugin marketplace add airlockapp/claude-plugins`
 
 ---
 
@@ -88,7 +72,6 @@ airlock-extensions/
 │   ├── airlock-windsurf-enforcer/      # Windsurf IDE enforcer
 │   ├── airlock-copilot-enforcer/       # VS Code Copilot enforcer
 │   ├── airlock-antigravity-enforcer/   # VS Code Antigravity enforcer
-│   ├── claude-code-enforcer/           # Claude Code plugin enforcer
 │   ├── airlock-cli/                    # CLI enforcer (sign-in, pair, approve)
 │   ├── shells/                         # Shell plugins (Bash, Zsh, PowerShell)
 │   ├── build-enforcers.ps1             # Build single mode (dev/prod)

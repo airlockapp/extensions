@@ -1,7 +1,0 @@
-{
-  "name": "airlock",
-  "version": "0.3.2",
-  "description": "Airlock security gateway for Claude Code — gates tool use through mobile approval. Sign in and pair via plugin commands; no need to run the daemon CLI directly for auth.",
-  "keywords": ["airlock", "security", "approval", "gateway", "enforcer", "hooks"],
-  "commands": "./commands/"
-}
