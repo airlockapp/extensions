@@ -41,7 +41,8 @@ export async function requestApproval(
     externalRequestId?: string,
     abortSignal?: AbortSignal,
     authToken?: string,
-    diagnosticMode: boolean = false
+    diagnosticMode: boolean = false,
+    onTokenRefresh?: () => Promise<void>
 ): Promise<ApprovalResult> {
     const ws = vscode.workspace.workspaceFolders?.[0];
     const requestId = externalRequestId ?? "req-" + crypto.randomUUID();
@@ -200,25 +201,42 @@ export async function requestApproval(
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         const submitElapsed = Date.now() - submitStartTime;
-        out.appendLine(`[Airlock] ✗ Artifact submit FAILED (${submitElapsed}ms): ${msg}`);
 
-        // Detect stale routing token / no approver
-        if (msg.includes("no_approver") || msg.includes("422")) {
-            out.appendLine(`[Airlock] ⚠ Routing token may be stale — clearing and prompting re-pair`);
-            if (context) {
-                await clearRoutingToken(context);
+        // 401 retry: refresh token and retry once
+        if (msg.includes("HTTP 401") && onTokenRefresh) {
+            out.appendLine(`[Airlock] ⚠ 401 on submit (${submitElapsed}ms) — refreshing token and retrying...`);
+            try {
+                await onTokenRefresh();
+                const retryResult = await httpRequest("POST", submitUrl, envelope, undefined, authToken);
+                const retryElapsed = Date.now() - submitStartTime;
+                out.appendLine(`[Airlock] ✓ Artifact accepted after token refresh (${retryElapsed}ms)`);
+                out.appendLine(`[Airlock]   requestId: ${requestId}`);
+            } catch (retryErr: unknown) {
+                const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+                out.appendLine(`[Airlock] ✗ Retry after refresh also failed: ${retryMsg}`);
+                throw retryErr;
             }
-            vscode.window.showWarningMessage(
-                "Airlock: No approver found — your pairing may be stale. Please re-pair with your mobile device.",
-                "Pair Now"
-            ).then(choice => {
-                if (choice === "Pair Now") {
-                    vscode.commands.executeCommand("airlock.startPairing");
-                }
-            });
-        }
+        } else {
+            out.appendLine(`[Airlock] ✗ Artifact submit FAILED (${submitElapsed}ms): ${msg}`);
 
-        throw err;
+            // Detect stale routing token / no approver
+            if (msg.includes("no_approver") || msg.includes("422")) {
+                out.appendLine(`[Airlock] ⚠ Routing token may be stale — clearing and prompting re-pair`);
+                if (context) {
+                    await clearRoutingToken(context);
+                }
+                vscode.window.showWarningMessage(
+                    "Airlock: No approver found — your pairing may be stale. Please re-pair with your mobile device.",
+                    "Pair Now"
+                ).then(choice => {
+                    if (choice === "Pair Now") {
+                        vscode.commands.executeCommand("airlock.startPairing");
+                    }
+                });
+            }
+
+            throw err;
+        }
     }
 
     // Step 2: Long-poll for decision (use 25s server-side intervals for retries)
