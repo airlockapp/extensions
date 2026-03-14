@@ -56,6 +56,27 @@ All enforcers provide:
 - 🔗 **Presence tracking** via WebSocket
 - 🔄 **Token refresh** for long-running sessions
 
+### Claude Code Marketplace
+
+This repository doubles as a **Claude Code plugin marketplace**. To install the Airlock enforcer plugin for Claude Code:
+
+1. Add the marketplace (one-time):
+   ```bash
+   /plugin marketplace add airlockapp/extensions
+   ```
+
+2. Install the plugin:
+   ```bash
+   /plugin install airlock@airlock-extensions
+   ```
+
+3. To uninstall:
+   ```bash
+   /plugin uninstall airlock@airlock-extensions
+   ```
+
+See [src/claude-code-enforcer/INSTALL.md](src/claude-code-enforcer/INSTALL.md) for detailed setup (sign-in, pairing, secure storage, troubleshooting).
+
 ---
 
 ## Repository Structure

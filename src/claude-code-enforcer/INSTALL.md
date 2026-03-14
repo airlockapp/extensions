@@ -18,36 +18,31 @@ This guide walks you through installing and configuring the Airlock Claude Code 
 
 Claude Code can load plugins in two ways: from a **local directory** (e.g. a repo or unpacked folder) or from a **marketplace** after the plugin is published there.
 
-### Option A: Local directory (recommended for development or one-off use)
+### Option A: From the Airlock marketplace (recommended)
+
+The plugin is published to the Airlock Claude Code marketplace hosted on GitHub. Add the marketplace and install the plugin by name:
+
+1. Add the marketplace (one-time):
+   ```bash
+   /plugin marketplace add airlockapp/extensions
+   ```
+
+2. Install the plugin:
+   ```bash
+   /plugin install airlock@airlock-extensions
+   ```
+
+The plugin is automatically available in every Claude Code session after installation.
+
+### Option B: Local directory (for development or one-off use)
 
 Run Claude Code with the plugin directory path using **`--plugin-dir`**:
-
-```bash
-claude --plugin-dir D:\repos\personalgit\airlock\src\plugins\claude-code-enforcer
-```
-
-On macOS/Linux:
 
 ```bash
 claude --plugin-dir /path/to/claude-code-enforcer
 ```
 
-The plugin is loaded for that session only. To use it every time, you can create a small script or alias that runs `claude --plugin-dir /path/to/claude-code-enforcer`, or add the plugin to a [marketplace](#option-b-from-a-marketplace) and install it by name.
-
-### Option B: From a marketplace
-
-If the plugin is published to a Claude Code marketplace (e.g. your team's or a public one), add that marketplace and install the plugin by name:
-
-1. Add the marketplace (if not already added):
-   ```bash
-   /plugin marketplace add <marketplace-source>
-   ```
-   (e.g. a GitHub repo, a path to a folder that contains `.claude-plugin/marketplace.json`, or a URL to a `marketplace.json` file.)
-
-2. Install the plugin by name (not by path):
-   ```bash
-   /plugin install airlock@<marketplace-name>
-   ```
+The plugin is loaded for that session only. To use it every time, install it from the marketplace (Option A) or create a shell alias.
 
 You cannot use `claude plugin install /path/to/plugin` with a **file path** — that command expects a **plugin name** from a configured marketplace. Use `--plugin-dir` for a local path.
 
@@ -201,8 +196,8 @@ This shows **mode** (dev/prod), **gateway URL**, whether you're signed in, and w
 ## Uninstall
 
 1. Stop the daemon: run **/airlock:sign-out** (or the daemon will stop automatically when your Claude Code session ends).
-2. If you installed the plugin from a marketplace:  
-   `claude plugin uninstall airlock@<marketplace-name>`  
+2. If you installed the plugin from the marketplace:  
+   `claude plugin uninstall airlock@airlock-extensions`  
    If you only used `--plugin-dir`, just stop using that flag (no uninstall step).
 3. Optional: remove config and credentials:  
    `rm -rf ~/.config/airlock-enforcer`  
@@ -213,7 +208,7 @@ This shows **mode** (dev/prod), **gateway URL**, whether you're signed in, and w
 
 ## Summary
 
-1. Load the plugin: run `claude --plugin-dir /path/to/claude-code-enforcer` (or install by name from a marketplace).
+1. Load the plugin: run `/plugin marketplace add airlockapp/extensions` then `/plugin install airlock@airlock-extensions` (or use `claude --plugin-dir /path/to/claude-code-enforcer` for local development).
 2. (Recommended) Run `npm install` in the plugin directory for secure storage.
 3. Sign in: **/airlock:sign-in** or `~/.config/airlock-enforcer/bin/airlock-enforcer login`.
 4. Pair: **/airlock:pair** or `~/.config/airlock-enforcer/bin/airlock-enforcer pair`.

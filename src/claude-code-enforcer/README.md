@@ -34,19 +34,17 @@ Approval **timeout** (no response from gateway within 2 minutes) always **denies
 
 ### 1. Load the plugin
 
-**From a local path** (e.g. this repo): run Claude Code with the plugin directory. The plugin is active for that session only.
+**From the Airlock marketplace** (recommended): Add the Airlock marketplace and install the plugin by name. The plugin is automatically kept up to date.
 
 ```bash
-claude --plugin-dir D:\path\to\airlock\src\plugins\claude-code-enforcer
-# macOS/Linux:
-claude --plugin-dir /path/to/airlock/src/plugins/claude-code-enforcer
+/plugin marketplace add airlockapp/extensions
+/plugin install airlock@airlock-extensions
 ```
 
-**From a marketplace**: if the plugin is published to a marketplace, add that marketplace and install by name:
+**From a local path** (e.g. for development): run Claude Code with the plugin directory. The plugin is active for that session only.
 
 ```bash
-/plugin marketplace add <marketplace-source>
-/plugin install airlock@<marketplace-name>
+claude --plugin-dir /path/to/claude-code-enforcer
 ```
 
 You cannot use `claude plugin install /path/...` with a file path — that command expects a plugin **name** from a configured marketplace.
