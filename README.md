@@ -41,6 +41,7 @@ Enforcers and the CLI align with HARP-CORE (artifact hash, decision verification
 | **[Airlock Windsurf Enforcer](src/airlock-windsurf-enforcer/)**       | Windsurf                     | Hooks (pre-tool-use gate)                                                                          |
 | **[Airlock Copilot Enforcer](src/airlock-copilot-enforcer/)**         | VS Code (GitHub Copilot)     | Hooks (pre-tool-use gate)                                                                          |
 | **[Airlock Antigravity Enforcer](src/airlock-antigravity-enforcer/)** | VS Code (Google Antigravity) | CDP (Chrome DevTools Protocol)                                                                     |
+| **[Airlock Claude Code Enforcer](src/claude-code-enforcer/)**         | Claude Code CLI              | Hooks (pre-tool-use gate)                                                                          |
 | **[Airlock CLI](src/airlock-cli/)**                                   | Any shell                    | CLI (`sign-in`, `pair`, `approve`) — use with [shell plugins](src/shells/) (Bash, Zsh, PowerShell) |
 
 ### Shared Capabilities
@@ -66,6 +67,7 @@ airlock-extensions/
 │   ├── airlock-windsurf-enforcer/      # Windsurf IDE enforcer
 │   ├── airlock-copilot-enforcer/       # VS Code Copilot enforcer
 │   ├── airlock-antigravity-enforcer/   # VS Code Antigravity enforcer
+│   ├── claude-code-enforcer/           # Claude Code plugin enforcer
 │   ├── airlock-cli/                    # CLI enforcer (sign-in, pair, approve)
 │   ├── shells/                         # Shell plugins (Bash, Zsh, PowerShell)
 │   ├── build-enforcers.ps1             # Build single mode (dev/prod)

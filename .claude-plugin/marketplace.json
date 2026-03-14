@@ -1,0 +1,21 @@
+{
+  "name": "airlock-extensions",
+  "owner": {
+    "name": "Out Of Band Systems"
+  },
+  "plugins": [
+    {
+      "name": "airlock",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/airlockapp/extensions.git",
+        "path": "src/claude-code-enforcer"
+      },
+      "description": "Airlock security gateway for Claude Code — gates tool use through mobile approval. Sign in and pair via plugin commands; no need to run the daemon CLI directly for auth.",
+      "version": "0.3.2",
+      "author": {
+        "name": "Out Of Band Systems"
+      }
+    }
+  ]
+}
