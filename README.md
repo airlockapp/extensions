@@ -109,14 +109,14 @@ VSIX packages are placed in:
 
 | Mode     | Output Directory | Naming                              |
 | -------- | ---------------- | ----------------------------------- |
-| **dev**  | `dist/dev/`      | `airlock-*-enforcer-dev-0.3.0.vsix` |
-| **prod** | `dist/prod/`     | `airlock-*-enforcer-0.3.0.vsix`     |
+| **dev**  | `dist/dev/`      | `airlock-*-enforcer-dev-0.3.2.vsix` |
+| **prod** | `dist/prod/`     | `airlock-*-enforcer-0.3.2.vsix`     |
 
 ### Install a Built Extension
 
 ```bash
 # VS Code / Cursor / Windsurf
-code --install-extension dist/prod/airlock-cursor-enforcer-0.3.0.vsix
+code --install-extension dist/prod/airlock-cursor-enforcer-0.3.2.vsix
 ```
 
 Or: **Extensions** → **⋯** → **Install from VSIX…** → select the `.vsix` file.
