@@ -271,7 +271,7 @@ async function main() {
 
     const plaintextContent = JSON.stringify({
         actionType, commandText: commandLine,
-        buttonText: buildDescription(payload),
+        description: buildDescription(payload),
         workspace: WORKSPACE_NAME, repoName: REPO_NAME,
         source: "windsurf-hooks", hookEvent: payload.event,
         toolInput: payload.input ? JSON.stringify(payload.input).substring(0, 500) : undefined,
@@ -282,11 +282,11 @@ async function main() {
         createdAt: new Date().toISOString(),
         sender: { enforcerId: ENFORCER_ID },
         body: {
-            artifactType: "command-approval",
+            artifactType: "command.review",
             artifactHash: crypto.createHash("sha256").update(`${actionType}:${commandLine}:${Date.now()}`).digest("hex"),
             ciphertext: { alg: "none", data: plaintextContent },
             expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-            metadata: Object.assign({ repoName: REPO_NAME, workspaceName: WORKSPACE_NAME }, ROUTING_TOKEN ? { routingToken: ROUTING_TOKEN } : {}),
+            metadata: Object.assign({ repoName: REPO_NAME, workspaceName: WORKSPACE_NAME, requestLabel: humanizeEvent(payload.event) }, ROUTING_TOKEN ? { routingToken: ROUTING_TOKEN } : {}),
         },
     };
 
@@ -409,6 +409,17 @@ function buildDescription(payload) {
         default:
             return `Hook event: ${payload.event || "unknown"}: ${payload.command || payload.toolName || fp || "?"}`;
     }
+}
+
+function humanizeEvent(event) {
+    const map = {
+        'pre_run_command': 'Terminal Command',
+        'pre_mcp_tool_use': 'MCP Tool Call',
+        'pre_read_code': 'File Read',
+        'pre_write_code': 'File Edit',
+        'pre_user_prompt': 'Prompt Submit',
+    };
+    return map[event] || event || 'unknown';
 }
 
 main().catch(err => {

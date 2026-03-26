@@ -73,6 +73,7 @@ Windsurf's hooks mechanism only fires when the terminal auto-execution mode allo
 - **Windsurf rule** — `.windsurf/rules/airlock.md` instructs Cascade to cooperate with the hook and never bypass it
 - **Circuit breaker** — 5 consecutive errors → auto-mode disables
 - **Timeout enforcement** — Configurable; default 60 seconds
+- **Delivery acknowledgment** — After receiving a decision, the extension sends a fire-and-forget `POST /v1/acks` to confirm delivery to the gateway
 
 ## Changelog
 

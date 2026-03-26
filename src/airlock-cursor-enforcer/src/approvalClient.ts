@@ -79,10 +79,19 @@ export async function requestApproval(
     const plaintextContent = JSON.stringify({
         actionType,
         commandText,
-        buttonText,
+        description: buttonText,
         workspace: workspaceName,
         repoName: "",
         source: "cursor-enforcer",
+        extensions: {
+            "org.harp.requestedActions": {
+                version: 1,
+                actions: [
+                    { id: "approve", caption: "Approve", style: "primary", decision: "allow" },
+                    { id: "reject", caption: "Reject", style: "danger", decision: "deny" },
+                ],
+            },
+        },
     });
 
     // HARP-GW §2.1: Gateway is zero-knowledge — artifacts MUST be encrypted
@@ -120,9 +129,10 @@ export async function requestApproval(
     // Workspace identity — cleartext so the mobile app can group items by workspace
     metadata.repoName = "";
     metadata.workspaceName = workspaceName;
+    metadata.requestLabel = buttonText;
 
     const artifactBody = {
-        artifactType: "command-approval",
+        artifactType: "command.review",
         artifactHash: crypto.createHash("sha256")
             .update(`${actionType}:${commandText}:${Date.now()}`)
             .digest("hex"),
@@ -223,6 +233,11 @@ export async function requestApproval(
                 out.appendLine(
                     `[Airlock] Decision: ${decision.decision}${decision.reason ? ` (${decision.reason})` : ""}`
                 );
+                // Fire-and-forget: acknowledge receipt of the decision
+                const envMsgId = (waitResult as Record<string, unknown>).msgId as string | undefined;
+                if (envMsgId) {
+                    submitAckEnvelope(endpointUrl, envMsgId, requestId, out).catch(() => {});
+                }
                 return { ...decision, requestId };
             }
 
@@ -436,6 +451,38 @@ function httpRequest(method: string, url: string, body?: object, abortSignal?: A
 
 function sleep(ms: number): Promise<void> {
     return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Fire-and-forget: POST /v1/acks to confirm receipt of a decision.
+ * Errors are logged but never propagated.
+ */
+async function submitAckEnvelope(
+    endpointUrl: string,
+    decisionMsgId: string,
+    exchangeRequestId: string,
+    out: vscode.OutputChannel
+): Promise<void> {
+    try {
+        const ackUrl = `${endpointUrl.replace(/\/$/, "")}/v1/acks`;
+        const envelope = {
+            msgId: `ack-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            msgType: "ack.submit",
+            requestId: exchangeRequestId,
+            createdAt: new Date().toISOString(),
+            sender: {},
+            body: {
+                msgId: decisionMsgId,
+                status: "delivered",
+                ackAt: new Date().toISOString(),
+            },
+        };
+        await httpRequest("POST", ackUrl, envelope);
+        out.appendLine(`[Airlock] ✓ Ack sent for msgId=${decisionMsgId}`);
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        out.appendLine(`[Airlock] ⚠ Ack failed (non-fatal): ${msg}`);
+    }
 }
 
 /**

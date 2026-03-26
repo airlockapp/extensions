@@ -100,6 +100,7 @@ The status bar shows the current state: `$(shield) Airlock ✓` when active.
 - **Signature verification** — Ed25519 for pairing integrity
 - **Circuit breaker** — 3 consecutive errors → auto-mode disables
 - **Timeout enforcement** — Configurable; default 60 seconds
+- **Delivery acknowledgment** — After receiving a decision, the extension sends a fire-and-forget `POST /v1/acks` to confirm delivery to the gateway
 
 ## Changelog
 

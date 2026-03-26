@@ -391,7 +391,7 @@ export class NamedPipeProxy {
         const plaintextContent = JSON.stringify({
             actionType,
             commandText: commandLine,
-            buttonText: this._buildDescription(normalizedPayload),
+            description: this._buildDescription(normalizedPayload),
             workspace: this._opts.workspaceName,
             repoName: effectiveRepoName,
             source: 'windsurf-hooks',
@@ -427,7 +427,7 @@ export class NamedPipeProxy {
             createdAt: new Date().toISOString(),
             sender: { enforcerId: this._opts.enforcerId },
             body: {
-                artifactType: 'command-approval',
+                artifactType: 'command.review',
                 artifactHash: crypto.createHash('sha256')
                     .update(`${actionType}:${commandLine}:${Date.now()}`)
                     .digest('hex'),
@@ -436,6 +436,7 @@ export class NamedPipeProxy {
                 metadata: {
                     repoName: effectiveRepoName,
                     workspaceName: this._opts.workspaceName,
+                    requestLabel: this._humanizeEvent(event),
                     routingToken,
                 },
             },
@@ -617,7 +618,7 @@ export class NamedPipeProxy {
             const plaintextContent = JSON.stringify({
                 actionType,
                 commandText: commandLine,
-                buttonText: `DND ${decision === "approve" ? "APPROVE" : "DENY"} audit`,
+                description: `DND ${decision === "approve" ? "APPROVE" : "DENY"} audit`,
                 workspace: this._opts.workspaceName,
                 repoName: effectiveRepoName,
                 source: 'windsurf-hooks-dnd',
@@ -639,7 +640,7 @@ export class NamedPipeProxy {
                 createdAt: new Date().toISOString(),
                 sender: { enforcerId: this._opts.enforcerId },
                 body: {
-                    artifactType: 'command-approval',
+                    artifactType: 'command.review',
                     artifactHash: crypto.createHash('sha256')
                         .update(`dnd-audit:${actionType}:${commandLine}:${Date.now()}`)
                         .digest('hex'),
@@ -648,6 +649,7 @@ export class NamedPipeProxy {
                     metadata: {
                         repoName: effectiveRepoName,
                         workspaceName: this._opts.workspaceName,
+                        requestLabel: this._humanizeEvent(event),
                         routingToken,
                         dndAudit: 'true',
                         dndDecision: decision,
@@ -739,6 +741,32 @@ export class NamedPipeProxy {
             default:
                 return `Hook event: ${payload.event || 'unknown'}: ${payload.command || payload.toolName || fp || '?'}`;
         }
+    }
+
+    // ── Event humanizing ────────────────────────────────────────────────────
+
+    /** Convert internal hook event names to human-friendly labels for mobile display. */
+    private _humanizeEvent(event: string): string {
+        const map: Record<string, string> = {
+            'pre_run_command': 'Terminal Command',
+            'pre_mcp_tool_use': 'MCP Tool Call',
+            'pre_read_code': 'File Read',
+            'pre_write_code': 'File Edit',
+            'pre_user_prompt': 'Prompt Submit',
+            'beforeShellExecution': 'Terminal Command',
+            'beforeMCPExecution': 'MCP Tool Call',
+            'beforeReadFile': 'File Read',
+            'afterFileEdit': 'File Edit',
+            'beforeSubmitPrompt': 'Prompt Submit',
+            'sessionStart': 'Session Start',
+            'subagentStart': 'Subagent Start',
+            'PreToolUse': 'Pre Tool Use',
+            'PostToolUse': 'Post Tool Use',
+            'SessionStart': 'Session Start',
+            'SessionEnd': 'Session End',
+            'Notification': 'Notification',
+        };
+        return map[event] || event;
     }
 
     // ── Auto-approve matching (moved from gate script) ───────────────────────

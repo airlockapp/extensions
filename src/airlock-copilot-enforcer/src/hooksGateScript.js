@@ -248,7 +248,7 @@ async function main() {
 
     const plaintextContent = JSON.stringify({
         actionType, commandText: commandLine,
-        buttonText: buildDescription(toolName, toolInput, hookEvent),
+        description: buildDescription(toolName, toolInput, hookEvent),
         workspace: WORKSPACE_NAME, repoName: REPO_NAME,
         source: "copilot-hooks", hookEvent: hookEvent,
         toolName: toolName || undefined,
@@ -260,11 +260,11 @@ async function main() {
         createdAt: new Date().toISOString(),
         sender: { enforcerId: ENFORCER_ID },
         body: {
-            artifactType: "command-approval",
+            artifactType: "command.review",
             artifactHash: crypto.createHash("sha256").update(`${actionType}:${commandLine}:${Date.now()}`).digest("hex"),
             ciphertext: { alg: "none", data: plaintextContent },
             expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-            metadata: Object.assign({ repoName: REPO_NAME, workspaceName: WORKSPACE_NAME }, ROUTING_TOKEN ? { routingToken: ROUTING_TOKEN } : {}),
+            metadata: Object.assign({ repoName: REPO_NAME, workspaceName: WORKSPACE_NAME, requestLabel: humanizeEvent(hookEvent) }, ROUTING_TOKEN ? { routingToken: ROUTING_TOKEN } : {}),
         },
     };
 
@@ -417,3 +417,14 @@ main().catch(err => {
     log(`FATAL: ${err.message || err} — blocking (fail closed)`);
     process.exit(2);
 });
+
+function humanizeEvent(event) {
+    const map = {
+        'PreToolUse': 'Pre Tool Use',
+        'PostToolUse': 'Post Tool Use',
+        'SessionStart': 'Session Start',
+        'SessionEnd': 'Session End',
+        'Notification': 'Notification',
+    };
+    return map[event] || event || 'unknown';
+}

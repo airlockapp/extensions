@@ -108,6 +108,7 @@ The extension also installs `.github/rules/airlock.md` — a project rule that i
 - **Tamper-resistant gate** — Gate scripts and hooks config are set read-only; commands targeting them are auto-denied
 - **Copilot rules** — `.github/rules/airlock.md` instructs the agent to cooperate with the hook and never bypass it
 - **Timeout enforcement** — Configurable; default 60 seconds
+- **Delivery acknowledgment** — After receiving a decision, the extension sends a fire-and-forget `POST /v1/acks` to confirm delivery to the gateway
 
 ## Changelog
 
