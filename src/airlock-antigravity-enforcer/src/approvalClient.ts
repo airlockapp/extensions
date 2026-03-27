@@ -125,8 +125,8 @@ export async function requestApproval(
             "org.harp.requestedActions": {
                 version: 1,
                 actions: [
-                    { id: "approve", caption: "Approve", style: "primary", decision: "allow" },
-                    { id: "reject", caption: "Reject", style: "danger", decision: "deny" },
+                    { id: "approve", caption: "Approve", style: "primary", decision: "approve" },
+                    { id: "reject", caption: "Reject", style: "danger", decision: "reject" },
                 ],
             },
         },
