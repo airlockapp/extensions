@@ -82,7 +82,7 @@ If **PSReadLine** is not available, the profile prints a warning and does not in
 Use the provided **batch file** to test the profile without a real gateway:
 
 ```powershell
-# Deny all commands (exit code 1)
+# Reject all commands (exit code 1)
 $env:AIRLOCK_CLI = "C:\path\to\shells\posh\fake-airlock-cli.bat"
 $env:FAKE_AIRLOCK_EXIT = "1"
 . $PROFILE

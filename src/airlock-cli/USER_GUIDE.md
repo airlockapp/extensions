@@ -9,7 +9,7 @@ This guide helps you install, set up, and use the **Airlock CLI** so you can req
 The Airlock CLI is a small program that:
 
 1. **Asks for approval** — Before a command runs, it sends a request to the Airlock gateway. You see the request on the **Airlock mobile app** and tap **Approve** or **Deny**.
-2. **Blocks until you decide** — The terminal waits until you approve, deny, or until a timeout. It then exits with a clear result so your shell or script can allow or block the command.
+2. **Blocks until you decide** — The terminal waits until you approve, reject, or until a timeout. It then exits with a clear result so your shell or script can allow or block the command.
 3. **Stays secure** — You sign in once (with your normal account) and pair the CLI with your phone once. After that, approvals are cryptographically verified so only your decision counts.
 
 You typically **don’t run the CLI by hand** for every command. Instead, you (or your team) set up a **wrapper** that runs the CLI first; if it exits “approved,” the wrapper runs the real command.
@@ -22,7 +22,7 @@ You need:
 
 - **Airlock gateway** — Your organization or project will give you a URL (e.g. `https://gateway.mycompany.com`). If you’re trying Airlock yourself, use the URL from your dev setup (e.g. `https://localhost:7145`).
 - **An account** — Same account you use for the Airlock web app or IDE extension (Keycloak/SSO).
-- **Airlock mobile app** — Installed on your phone, signed in with that account. Used to approve or deny requests and to **pair** the CLI.
+- **Airlock mobile app** — Installed on your phone, signed in with that account. Used to approve or reject requests and to **pair** the CLI.
 
 ---
 
@@ -125,7 +125,7 @@ airlock-cli approve --command "git push origin main"
 ```
 
 - The CLI sends the command to the gateway; you get a notification on your phone.
-- You **Approve** or **Deny** in the app.
+- You **Approve** or **Reject** in the app.
 - The CLI then exits:
   - **Exit 0** — Approved → safe for your script to run the command.
   - **Exit 1** — Denied.
@@ -251,7 +251,7 @@ After this you must **sign in** and **pair** again before using `approve`.
 
 ### “Approval timeout” (exit code 3)
 
-- You didn’t approve or deny in time. Increase `--timeout` if needed, or approve faster next time.
+- You didn’t approve or reject in time. Increase `--timeout` if needed, or approve faster next time.
 - Check that the mobile app has notifications enabled and can reach the gateway (e.g. same network or VPN).
 
 ### Browser doesn’t open when I run sign-in

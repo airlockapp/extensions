@@ -90,7 +90,7 @@ airlock-cli approve \
 - **Stdin** — Not read; safe to use in pipelines or with interactive shells.
 - **Stdout** — No normal output; only progress or errors may go to **stderr**.
 - **Idempotency** — Each call uses a new `requestId`; no client-side idempotency key is exposed.
-- **Gateway flow** — Same as IDE enforcers: build encrypted artifact (AES-256-GCM), submit to `POST /v1/artifacts`, long-poll `GET /v1/exchanges/{requestId}/wait`, verify decision (Ed25519) with paired keys, then exit. If an applicable DND policy exists (from the mobile app), the CLI first queries `GET /v1/policy/dnd/effective` and may auto-approve/auto-deny without an interactive decision, while still emitting a short‑lived DND audit artifact to `POST /v1/artifacts` for history.
+- **Gateway flow** — Same as IDE enforcers: build encrypted artifact (AES-256-GCM), submit to `POST /v1/artifacts`, long-poll `GET /v1/exchanges/{requestId}/wait`, verify decision (Ed25519) with paired keys, then exit. If an applicable DND policy exists (from the mobile app), the CLI first queries `GET /v1/policy/dnd/effective` and may auto-approve/auto-reject without an interactive decision, while still emitting a short‑lived DND audit artifact to `POST /v1/artifacts` for history.
 
 ---
 
@@ -252,10 +252,10 @@ go build -o airlock-cli ./cmd/airlock-cli
 - Approve on the mobile app within the timeout.
 - CLI should exit 0; stderr may show “Approved” or reason.
 
-### 5. Approve (denied)
+### 5. Approve (rejected)
 
 - Run the same `approve` command and **reject** on the mobile app.
-- CLI should exit 1.
+- Notice it exits with status `1`.
 
 ### 6. Approve (timeout)
 

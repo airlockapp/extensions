@@ -10,8 +10,8 @@ When the profile is loaded and you press **Enter** on a command:
 
 1. The command is sent to **Airlock** (via `airlock-cli`).
 2. A notification appears on your **Airlock mobile app**.
-3. You tap **Approve** or **Deny**.
-4. If you approve, the command runs in PowerShell. If you deny (or don’t respond in time), it does not run.
+3. You tap **Approve** or **Reject**.
+4. If you approve, the command runs in PowerShell. If you reject (or don’t respond in time), it does not run.
 
 So you get a second check before risky commands (e.g. `git push`, production deploys) actually execute.
 
@@ -107,7 +107,7 @@ When both succeed, `airlock-cli status` should show “Signed in: true” and �
 
 The command will run (no approval message). On your phone, you should see the approval request in the Airlock app.
 
-- If you **deny** in the app, the command will not run and you’ll see “[Airlock] Denied” in red.
+- If you **reject** in the app, the command will not run and you’ll see “[Airlock] Denied” in red.
 - If you don’t approve in time, with default `AIRLOCK_FAIL_MODE=open` the command still runs and you’ll see “Unavailable, continuing” in yellow.
 
 ---

@@ -77,7 +77,7 @@ export FAKE_AIRLOCK_EXIT=0
 source airlock.plugin.zsh
 # Type a command and press Enter → it runs
 
-# Deny all commands
+# Reject all commands
 export FAKE_AIRLOCK_EXIT=1
 # Type a command and press Enter → it is blocked
 ```
