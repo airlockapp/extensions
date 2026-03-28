@@ -57,9 +57,9 @@ All enforcers provide:
 
 ### Claude Code Plugin
 
-The Claude Code enforcer plugin has moved to its own dedicated repository:
+The Claude Code enforcer plugin is included in this repository:
 
-👉 **[airlockapp/claude-plugins](https://github.com/airlockapp/claude-plugins)** — install via `/plugin marketplace add airlockapp/claude-plugins`
+👉 **[Claude Code Enforcer](plugins/claude-code-enforcer/)** — install via `/plugin marketplace add airlockapp/extensions`
 
 ---
 
@@ -67,6 +67,8 @@ The Claude Code enforcer plugin has moved to its own dedicated repository:
 
 ```
 airlock-extensions/
+├── plugins/
+│   └── claude-code-enforcer/           # Claude Code plugin
 ├── src/
 │   ├── airlock-cursor-enforcer/        # Cursor IDE enforcer
 │   ├── airlock-windsurf-enforcer/      # Windsurf IDE enforcer
@@ -109,14 +111,14 @@ VSIX packages are placed in:
 
 | Mode     | Output Directory | Naming                              |
 | -------- | ---------------- | ----------------------------------- |
-| **dev**  | `dist/dev/`      | `airlock-*-enforcer-dev-0.3.2.vsix` |
-| **prod** | `dist/prod/`     | `airlock-*-enforcer-0.3.2.vsix`     |
+| **dev**  | `extensions_dist/dev/`      | `airlock-*-enforcer-dev-0.4.1.vsix` |
+| **prod** | `extensions_dist/prod/`     | `airlock-*-enforcer-0.4.1.vsix`     |
 
 ### Install a Built Extension
 
 ```bash
 # VS Code / Cursor / Windsurf
-code --install-extension dist/prod/airlock-cursor-enforcer-0.3.2.vsix
+code --install-extension extensions_dist/prod/airlock-cursor-enforcer-0.4.1.vsix
 ```
 
 Or: **Extensions** → **⋯** → **Install from VSIX…** → select the `.vsix` file.
