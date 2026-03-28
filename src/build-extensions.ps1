@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Builds all Airlock enforcer extensions for both dev and prod modes.
 
@@ -40,7 +40,7 @@ param(
     [string]$Name
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $buildScript = Join-Path $scriptDir "build-enforcers.ps1"
@@ -79,7 +79,7 @@ Write-Host "================================================================" -F
 Write-Host "  Build Complete" -ForegroundColor Magenta
 Write-Host "================================================================" -ForegroundColor Magenta
 
-$repoRoot = Split-Path (Split-Path $scriptDir -Parent) -Parent
+$repoRoot = Split-Path $scriptDir -Parent
 $distDir = Join-Path $repoRoot "extensions_dist"
 
 Write-Host ""

@@ -1,5 +1,7 @@
 # Airlock Cursor Enforcer
 
+[View Source on GitHub](https://github.com/airlockapp/extensions/tree/main/src/airlock-cursor-enforcer)
+
 **Human-in-the-loop control for Cursor AI agents.** Every terminal command and MCP tool call made by the Cursor agent requires an explicit allow or deny decision from your paired Airlock mobile approver before it executes.
 
 > ⚠️ **Required Cursor Setting:** To approve or reject commands from the Airlock mobile app, set Cursor's terminal run mode to **"Run Everything as Agent"** (Yolo mode). See [Required Cursor Run Mode](#required-cursor-run-mode) below.
@@ -81,13 +83,6 @@ Cursor's hooks mechanism only fully respects the hook decision when run mode is 
 - **Circuit breaker** — 3 consecutive errors → auto-mode disables
 - **Timeout enforcement** — Configurable; default 60 seconds
 - **Delivery acknowledgment** — After receiving a decision, the extension sends a fire-and-forget `POST /v1/acks` to confirm delivery to the gateway
-
-## Changelog
-
-### v0.3.0
-- **Security hardening** — Verbose approval logs gated behind `diagnosticMode`; routing tokens masked in logs
-- **TLS fix** — All HTTP clients now respect `allowSelfSignedCerts` setting
-- **Diagnostic mode** — Approval request details only logged when `airlock.diagnosticMode` is enabled
 
 ## Platform Support
 

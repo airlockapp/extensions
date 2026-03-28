@@ -1,5 +1,7 @@
 # Airlock Windsurf Enforcer
 
+[View Source on GitHub](https://github.com/airlockapp/extensions/tree/main/src/airlock-windsurf-enforcer)
+
 **Human-in-the-loop control for Windsurf Cascade AI agents.** Every terminal command and MCP tool call made by the Cascade agent requires an explicit allow or deny decision from your paired Airlock mobile approver before it executes.
 
 > ⚠️ **Required Windsurf Setting:** Set Windsurf's terminal auto-execution mode to **"Auto Mode"** (recommended) for full approve/reject control. Turbo Mode fires the hook but does not enforce rejections. See [Required Windsurf Run Mode](#required-windsurf-run-mode) below.
@@ -74,13 +76,6 @@ Windsurf's hooks mechanism only fires when the terminal auto-execution mode allo
 - **Circuit breaker** — 5 consecutive errors → auto-mode disables
 - **Timeout enforcement** — Configurable; default 60 seconds
 - **Delivery acknowledgment** — After receiving a decision, the extension sends a fire-and-forget `POST /v1/acks` to confirm delivery to the gateway
-
-## Changelog
-
-### v0.3.0
-- **Security hardening** — Verbose approval logs gated behind `diagnosticMode`; routing tokens masked in logs
-- **TLS fix** — All HTTP clients now respect `allowSelfSignedCerts` setting
-- **Diagnostic mode** — Approval request details only logged when `airlock.diagnosticMode` is enabled
 
 ## Platform Support
 

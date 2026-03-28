@@ -1,5 +1,7 @@
 # Airlock Enforcer for Claude Code — Installation Guide
 
+[View Source on GitHub](https://github.com/airlockapp/extensions/tree/main/plugins/claude-code-enforcer)
+
 This guide walks you through installing and configuring the Airlock Claude Code plugin so that tool use (shell commands, file edits, etc.) is gated through the Airlock gateway and your mobile approval.
 
 ---
@@ -24,12 +26,12 @@ The plugin is published to the Airlock Claude Code marketplace hosted on GitHub.
 
 1. Add the marketplace (one-time):
    ```bash
-   /plugin marketplace add airlockapp/claude-plugins
+   /plugin marketplace add airlockapp/extensions
    ```
 
 2. Install the plugin:
    ```bash
-   /plugin install airlock@airlock-claude-plugins
+   /plugin install airlock@airlock-extensions
    ```
 
 The plugin is automatically available in every Claude Code session after installation.
@@ -219,7 +221,7 @@ This revokes the pairing on the gateway, clears stored credentials, and stops th
 
 **If installed from the marketplace:**
 ```bash
-claude plugin uninstall airlock@airlock-claude-plugins
+claude plugin uninstall airlock@airlock-extensions
 ```
 
 **If used with `--plugin-dir`:** Simply stop using the `--plugin-dir` flag. No uninstall step is needed.
@@ -260,7 +262,7 @@ The `.gitignore` entry (`.airlock`) can be removed too, but it's harmless to lea
 
 ## Summary
 
-1. Load the plugin: run `/plugin marketplace add airlockapp/claude-plugins` then `/plugin install airlock@airlock-claude-plugins` (or use `claude --plugin-dir /path/to/claude-code-enforcer` for local development).
+1. Load the plugin: run `/plugin marketplace add airlockapp/extensions` then `/plugin install airlock@airlock-extensions` (or use `claude --plugin-dir /path/to/claude-code-enforcer` for local development).
 2. (Recommended) Run `npm install` in the plugin directory for secure storage.
 3. Sign in: **/airlock:sign-in** or `node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" login`.
 4. Pair: **/airlock:pair** or `node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" pair`.

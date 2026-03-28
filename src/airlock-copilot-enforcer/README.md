@@ -1,5 +1,7 @@
 # Airlock Copilot Enforcer
 
+[View Source on GitHub](https://github.com/airlockapp/extensions/tree/main/src/airlock-copilot-enforcer)
+
 **Human-in-the-loop control for GitHub Copilot agents.** Every tool call made by the Copilot agent (bash, file edits, MCP calls, etc.) requires an explicit allow or deny decision from your paired Airlock mobile approver before it executes.
 
 > ⚠️ **Preview Feature:** GitHub Copilot agent hooks (`preToolUse`) are currently in preview. You need **VS Code 1.99 or later** and **GitHub Copilot Chat extension**. Ensure you are on the latest VS Code and Copilot Chat releases.
@@ -109,13 +111,6 @@ The extension also installs `.github/rules/airlock.md` — a project rule that i
 - **Copilot rules** — `.github/rules/airlock.md` instructs the agent to cooperate with the hook and never bypass it
 - **Timeout enforcement** — Configurable; default 60 seconds
 - **Delivery acknowledgment** — After receiving a decision, the extension sends a fire-and-forget `POST /v1/acks` to confirm delivery to the gateway
-
-## Changelog
-
-### v0.3.0
-- **Security hardening** — Verbose approval logs gated behind `diagnosticMode`; routing tokens masked in logs
-- **TLS fix** — All HTTP clients now respect `allowSelfSignedCerts` setting
-- **Diagnostic mode** — Approval request details only logged when `airlock.diagnosticMode` is enabled
 
 ## Platform Support
 

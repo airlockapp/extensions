@@ -1,5 +1,7 @@
 # Airlock Antigravity Enforcer
 
+[View Source on GitHub](https://github.com/airlockapp/extensions/tree/main/src/airlock-antigravity-enforcer)
+
 **Human-in-the-loop control for Antigravity AI agents.** Every agent step requires an explicit allow or deny decision from your paired Airlock mobile approver before it executes.
 
 ---
@@ -101,13 +103,6 @@ The status bar shows the current state: `$(shield) Airlock ✓` when active.
 - **Circuit breaker** — 3 consecutive errors → auto-mode disables
 - **Timeout enforcement** — Configurable; default 60 seconds
 - **Delivery acknowledgment** — After receiving a decision, the extension sends a fire-and-forget `POST /v1/acks` to confirm delivery to the gateway
-
-## Changelog
-
-### v0.3.0
-- **Security hardening** — Routing tokens no longer logged in plaintext; verbose approval logs gated behind `diagnosticMode`
-- **TLS fix** — All HTTP clients now respect `allowSelfSignedCerts` setting (previously some were hardcoded to accept self-signed certs)
-- **Diagnostic mode** — Approval request details (requestId, commandText, routing info) only logged when `airlock.diagnosticMode` is enabled
 
 ## Platform Support
 

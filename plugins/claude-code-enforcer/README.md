@@ -1,5 +1,7 @@
 # Airlock Enforcer — Claude Code Plugin
 
+[View Source on GitHub](https://github.com/airlockapp/extensions/tree/main/plugins/claude-code-enforcer)
+
 Claude Code plugin that gates tool use (Bash, Edit, Write, Read, etc.) through the **Airlock** security gateway for human-in-the-loop approval (e.g. mobile app).
 
 **The plugin works by itself.** It includes a **standalone daemon** for sign-in, pairing, token refresh, presence tracking, and gateway communication. You do not need Cursor or any other IDE.
@@ -37,8 +39,8 @@ Approval **timeout** (no response from gateway within 2 minutes) always **denies
 **From the Airlock marketplace** (recommended): Add the Airlock marketplace and install the plugin by name. The plugin is automatically kept up to date.
 
 ```bash
-/plugin marketplace add airlockapp/claude-plugins
-/plugin install airlock@airlock-claude-plugins
+/plugin marketplace add airlockapp/extensions
+/plugin install airlock@airlock-extensions
 ```
 
 > **Note:** After installing or updating the plugin, **restart Claude Code** (close and reopen) so the daemon starts and presence goes online. A simple `/reload plugins` is not enough — the daemon is launched by the SessionStart hook, which only fires when Claude Code opens.
