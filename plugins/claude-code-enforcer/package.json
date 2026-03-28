@@ -1,0 +1,10 @@
+{
+  "name": "airlock-enforcer-claude-code",
+  "version": "1.0.0",
+  "description": "Airlock Enforcer plugin for Claude Code — gates tool use through mobile approval",
+  "private": true,
+  "dependencies": {},
+  "optionalDependencies": {
+    "keytar": "^7.9.0"
+  }
+}

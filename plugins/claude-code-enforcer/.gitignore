@@ -1,0 +1,6 @@
+# No npm deps to ship — presence uses Node.js built-in http/https
+# Exclude optional native deps and transient files
+node_modules/keytar/
+node_modules/.bin/
+node_modules/.package-lock.json
+.airlock
