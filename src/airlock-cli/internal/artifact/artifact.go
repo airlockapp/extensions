@@ -7,11 +7,11 @@ import (
 	"github.com/airlock/airlock-cli/internal/crypto"
 )
 
-// ApprovePayload is the plaintext content encrypted and sent inside the artifact (command-approval).
+// ApprovePayload is the plaintext content encrypted and sent inside the artifact (command.review).
 type ApprovePayload struct {
 	ActionType string `json:"actionType"`
 	CommandText string `json:"commandText"`
-	ButtonText  string `json:"buttonText"`
+	ButtonText  string `json:"description"`
 	Workspace   string `json:"workspace"`
 	RepoName    string `json:"repoName"`
 	Source      string `json:"source"`
@@ -41,19 +41,20 @@ func BuildEnvelope(
 	}
 
 	now := time.Now().UnixMilli()
-	artifactHash := crypto.ArtifactHash("command-approval", payload.CommandText, now)
+	artifactHash := crypto.ArtifactHash("command.review", payload.CommandText, now)
 	expiresAt := time.Now().Add(10 * time.Minute).UTC().Format(time.RFC3339)
 
 	metadata := map[string]string{
 		"workspaceName": workspaceName,
 		"repoName":      payload.RepoName,
+		"requestLabel":  payload.ButtonText,
 	}
 	if routingToken != "" {
 		metadata["routingToken"] = routingToken
 	}
 
 	body := map[string]interface{}{
-		"artifactType": "command-approval",
+		"artifactType": "command.review",
 		"artifactHash": artifactHash,
 		"ciphertext": map[string]string{
 			"alg":   "AES-256-GCM",
@@ -96,12 +97,13 @@ func BuildDndAuditEnvelope(
 	}
 
 	now := time.Now().UnixMilli()
-	artifactHash := crypto.ArtifactHash("command-approval", payload.CommandText, now)
+	artifactHash := crypto.ArtifactHash("command.review", payload.CommandText, now)
 	expiresAt := time.Now().Add(1 * time.Minute).UTC().Format(time.RFC3339)
 
 	metadata := map[string]string{
 		"workspaceName": workspaceName,
 		"repoName":      payload.RepoName,
+		"requestLabel":  payload.ButtonText,
 		"dndAudit":      "true",
 		"dndDecision":   dndDecision,
 	}
@@ -110,7 +112,7 @@ func BuildDndAuditEnvelope(
 	}
 
 	body := map[string]interface{}{
-		"artifactType": "command-approval",
+		"artifactType": "command.review",
 		"artifactHash": artifactHash,
 		"ciphertext": map[string]string{
 			"alg":   "AES-256-GCM",

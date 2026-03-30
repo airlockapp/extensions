@@ -71,6 +71,41 @@ function getWorkspaceId(startPath) {
 const computeWorkspaceHash = generateWorkspaceId;
 const findWorkspaceHash = getWorkspaceId;
 
+/**
+ * Read the custom workspace name from the `.airlock` dotfile.
+ * Walks up the directory tree to find the nearest `.airlock`, same as getWorkspaceId.
+ * Returns the `workspaceName` field or null if not set.
+ */
+function getWorkspaceNameFromDotfile(startPath) {
+  let curr = path.resolve(startPath);
+  while (true) {
+    const airlockPath = path.join(curr, ".airlock");
+    if (fs.existsSync(airlockPath)) {
+      try {
+        const data = JSON.parse(fs.readFileSync(airlockPath, "utf8"));
+        return (data && data.workspaceName) ? data.workspaceName : null;
+      } catch { return null; }
+    }
+    const parent = path.dirname(curr);
+    if (parent === curr) break;
+    curr = parent;
+  }
+  return null;
+}
+
+/**
+ * Write a custom workspace name to the `.airlock` dotfile, preserving existing fields.
+ */
+function setWorkspaceNameInDotfile(wsPath, name) {
+  const dotfilePath = path.join(path.resolve(wsPath), ".airlock");
+  let data = {};
+  if (fs.existsSync(dotfilePath)) {
+    try { data = JSON.parse(fs.readFileSync(dotfilePath, "utf8")); } catch { data = {}; }
+  }
+  data.workspaceName = name;
+  fs.writeFileSync(dotfilePath, JSON.stringify(data, null, 2), "utf8");
+}
+
 // ── Config dir ─────────────────────────────────────────────
 
 function getConfigDir() {
@@ -355,6 +390,8 @@ function isAutoApproved(wsHash, commandText) {
 module.exports = {
   computeWorkspaceHash,
   findWorkspaceHash,
+  getWorkspaceNameFromDotfile,
+  setWorkspaceNameInDotfile,
   getConfigDir,
   ensureConfigDir,
   loadCacheAsync,

@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Compiles, packages (with all dependencies), and copies all Airlock enforcer
     extension VSIX files to the extensions_dist folder.
@@ -38,7 +38,7 @@ param(
     [string]$Name
 )
 
-$ErrorActionPreference = "Continue"
+$ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path $scriptDir -Parent
@@ -93,11 +93,11 @@ foreach ($name in $enforcers) {
     try {
         # 1. Install dependencies
         Write-Host "  [1/3] npm install..." -ForegroundColor DarkGray
-        Start-Process "cmd.exe" -ArgumentList "/c", "npm install --silent" -Wait -NoNewWindow
+        npm install --silent 2>&1 | Out-Null
 
         # 2. Compile TypeScript
         Write-Host "  [2/3] Compiling..." -ForegroundColor DarkGray
-        Start-Process "cmd.exe" -ArgumentList "/c", "npm run compile" -Wait -NoNewWindow
+        npm run compile 2>&1
         if ($LASTEXITCODE -ne 0) {
             Write-Host "  [FAIL] Compile failed for $name" -ForegroundColor Red
             $failed += $name
@@ -127,7 +127,7 @@ foreach ($name in $enforcers) {
 
         # 4. Package VSIX with all dependencies included
         Write-Host "  [4/4] Packaging VSIX..." -ForegroundColor DarkGray
-        Start-Process "cmd.exe" -ArgumentList "/c", "npx @vscode/vsce package --allow-missing-repository --skip-license" -Wait -NoNewWindow
+        npx @vscode/vsce package --allow-missing-repository --skip-license 2>&1
         if ($LASTEXITCODE -ne 0) {
             Write-Host "  [FAIL] Package failed for $name" -ForegroundColor Red
             $failed += $name

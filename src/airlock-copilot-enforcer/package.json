@@ -2,7 +2,7 @@
     "name": "airlock-copilot-enforcer",
     "displayName": "Airlock Copilot Enforcer",
     "description": "Airlock enforcement layer for GitHub Copilot — gates agent/tool-use actions through mobile approval. Uses Copilot's preToolUse hooks to intercept and gate all agent tool calls.",
-    "version": "0.4.1",
+    "version": "0.4.2",
     "publisher": "out-of-band-systems",
     "license": "MIT",
     "icon": "images/icon.png",
@@ -53,6 +53,10 @@
             {
                 "command": "airlock.setEnforcerId",
                 "title": "Airlock: Set Enforcer ID"
+            },
+            {
+                "command": "airlock.renameWorkspace",
+                "title": "Airlock: Rename Workspace"
             },
             {
                 "command": "airlock.login",

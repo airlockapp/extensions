@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Builds all Airlock enforcer extensions for both dev and prod modes.
 
@@ -40,7 +40,7 @@ param(
     [string]$Name
 )
 
-$ErrorActionPreference = "Continue"
+$ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $buildScript = Join-Path $scriptDir "build-enforcers.ps1"

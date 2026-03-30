@@ -35,7 +35,9 @@ export async function requestApproval(
     const msgId = "msg-" + crypto.randomUUID();
 
     // Build HARP artifact.submit envelope
-    const workspaceName = ws?.name || "unknown";
+    // Prefer user-chosen workspace name from workspaceState, falling back to folder name
+    const workspaceName = context?.workspaceState.get<string>("airlock.workspaceName")
+        || ws?.name || "unknown";
 
     // Sensitive display data — goes INSIDE encrypted ciphertext, NOT in cleartext metadata
     const plaintextContent = JSON.stringify({
@@ -144,13 +146,13 @@ export async function requestApproval(
             out.appendLine(`[Airlock] ✗ Artifact submit failed: ${msg}`);
 
             // Detect stale routing token / no approver
-            if (msg.includes("no_approver") || msg.includes("422")) {
-                out.appendLine(`[Airlock] ⚠ Routing token may be stale. Clearing and prompting re-pair.`);
+            if (msg.includes("no_approver") || msg.includes("422") || msg.includes("pairing_revoked") || msg.includes("403")) {
+                out.appendLine(`[Airlock] ⚠ Routing token may be stale or revoked. Clearing and prompting re-pair.`);
                 if (context) {
                     await clearRoutingToken(context);
                 }
                 vscode.window.showWarningMessage(
-                    "Airlock: No approver found — your pairing may be stale. Please re-pair with your mobile device.",
+                    "Airlock: Pairing session is no longer active or no approver found. Please re-pair with your mobile device.",
                     "Pair Now"
                 ).then(choice => {
                     if (choice === "Pair Now") {

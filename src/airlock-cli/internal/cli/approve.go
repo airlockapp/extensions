@@ -116,7 +116,7 @@ func runApprove(cmd *cobra.Command, _ []string) error {
 
 		// Fire-and-forget DND audit artifact so the mobile app shows a non-interactive history entry.
 		auditPayload := &artifact.ApprovePayload{
-			ActionType:  "command-approval",
+			ActionType:  "command.review",
 			CommandText: approveCommand,
 			ButtonText:  fmt.Sprintf("DND %s audit", strings.ToUpper(decision)),
 			Workspace:   workspaceName,
@@ -154,7 +154,7 @@ func runApprove(cmd *cobra.Command, _ []string) error {
 	}
 
 	payload := &artifact.ApprovePayload{
-		ActionType:  "command-approval",
+		ActionType:  "command.review",
 		CommandText: approveCommand,
 		ButtonText:  "Approve",
 		Workspace:   workspaceName,
@@ -196,7 +196,7 @@ func runApprove(cmd *cobra.Command, _ []string) error {
 				pollSec = 1
 			}
 		}
-		body, err := gw.WaitForDecision(requestID, pollSec)
+		body, envMsgId, err := gw.WaitForDecision(requestID, pollSec)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Poll error:", err)
 			time.Sleep(time.Second)
@@ -204,6 +204,11 @@ func runApprove(cmd *cobra.Command, _ []string) error {
 		}
 		if body == nil {
 			continue
+		}
+
+		// Fire-and-forget: acknowledge receipt of the decision
+		if envMsgId != "" {
+			go func() { _ = gw.SubmitAck(envMsgId, requestID) }()
 		}
 
 		outcome := verify.VerifyDecision(body, expectedHash, secrets.PairedKeys)

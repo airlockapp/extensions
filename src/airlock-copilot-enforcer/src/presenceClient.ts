@@ -21,6 +21,7 @@ export class PresenceClient {
     private readonly maxReconnectDelay = 30000; // Max 30s
     private disposed = false;
     private _isConnected = false;
+    private _workspaceName: string = "unknown";
 
     private readonly emitter = new vscode.EventEmitter<PresenceEvent>();
     public readonly onEvent = this.emitter.event;
@@ -31,7 +32,7 @@ export class PresenceClient {
     constructor(
         private readonly out: vscode.OutputChannel,
         private readonly enforcerVersion: string,
-        private readonly enforcerLabel: string = "Copilot"
+        private readonly enforcerLabel: string = "Antigravity"
     ) { }
 
     get isConnected(): boolean {
@@ -40,25 +41,16 @@ export class PresenceClient {
 
     /**
      * Connect to the Gateway WebSocket endpoint for presence.
-     * Uses async tokenGetter to ensure fresh token on each connection attempt.
+     * Uses Bearer token for authentication instead of client credentials.
      */
-    connect(gatewayUrl: string, tokenGetter: () => Promise<string | undefined>, enforcerDeviceId: string): void {
+    async connect(gatewayUrl: string, tokenGetter: (() => string | undefined) | (() => Promise<string | undefined>), enforcerDeviceId: string, workspaceName?: string): Promise<void> {
+        if (workspaceName) {
+            this._workspaceName = workspaceName;
+        }
         if (this.ws) {
             this.disconnect();
         }
 
-        // Wrap the async connect logic
-        this._connectAsync(gatewayUrl, tokenGetter, enforcerDeviceId).catch(err => {
-            this.out.appendLine(`[Airlock Presence] Connect error: ${err}`);
-            this.scheduleReconnect(gatewayUrl, tokenGetter, enforcerDeviceId);
-        });
-    }
-
-    private async _connectAsync(
-        gatewayUrl: string,
-        tokenGetter: () => Promise<string | undefined>,
-        enforcerDeviceId: string
-    ): Promise<void> {
         // Build WS URL
         const wsBase = gatewayUrl.replace(/^http/, "ws");
         const params = new URLSearchParams({
@@ -116,6 +108,7 @@ export class PresenceClient {
                         createdAt: msg.createdAt,
                     });
                 } else if (msg.msgType === "pairing.revoked") {
+                    // Mobile approver has removed this pairing — clear token and go offline
                     this.out.appendLine(`[Airlock Presence] Pairing revoked by mobile approver: ${msg.reason ?? ""}`);
                     this.emitter.fire("pairing.revoked");
                     // Do not reconnect after revocation — stay offline
@@ -126,15 +119,10 @@ export class PresenceClient {
             }
         });
 
-        this.ws.on("close", (code: number, _reason: Buffer) => {
+        this.ws.on("close", (code: number, reason: Buffer) => {
             this._isConnected = false;
             this.out.appendLine(`[Airlock Presence] Disconnected (code=${code})`);
             this.emitter.fire("disconnected");
-
-            // 401 close — token expired, will refresh on reconnect via async tokenGetter
-            if (code === 4001 || code === 401) {
-                this.out.appendLine("[Airlock Presence] Auth expired — will refresh token on reconnect");
-            }
 
             if (!this.disposed) {
                 this.scheduleReconnect(gatewayUrl, tokenGetter, enforcerDeviceId);
@@ -152,16 +140,15 @@ export class PresenceClient {
         });
     }
 
-    /**
-     * Send capabilities hello message on connect, including workspace info.
-     */
+    updateWorkspaceName(name: string): void {
+        this._workspaceName = name;
+        this.out.appendLine(`[Airlock Presence] Workspace name updated locally to: ${name}`);
+    }
+
     private sendHello(): void {
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
             return;
         }
-
-        const ws = vscode.workspace.workspaceFolders?.[0];
-        const workspaceName = ws?.name || "unknown";
 
         const hello = JSON.stringify({
             msgType: "hello",
@@ -170,12 +157,12 @@ export class PresenceClient {
                 enforcerVersion: this.enforcerVersion,
                 supportsRefresh: "true",
             },
-            workspaceName,
+            workspaceName: this._workspaceName,
             enforcerLabel: this.enforcerLabel,
         });
 
         this.ws.send(hello);
-        this.out.appendLine(`[Airlock Presence] Sent capabilities hello (workspace=${workspaceName})`);
+        this.out.appendLine(`[Airlock Presence] Sent capabilities hello (workspace=${this._workspaceName})`);
     }
 
     /**
@@ -183,7 +170,7 @@ export class PresenceClient {
      */
     private scheduleReconnect(
         gatewayUrl: string,
-        tokenGetter: () => Promise<string | undefined>,
+        tokenGetter: (() => string | undefined) | (() => Promise<string | undefined>),
         enforcerDeviceId: string
     ): void {
         if (this.disposed || this.reconnectTimer) {

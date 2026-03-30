@@ -53,6 +53,7 @@ All enforcers provide:
 - 📱 **Workspace pairing** with mobile approver (QR code + text code)
 - 📊 **Quota monitoring** via Gateway (subscription status)
 - 🔗 **Presence tracking** via WebSocket
+- ✏️ **Workspace rename** — sync name changes to gateway via WebSocket or REST
 - 🔄 **Token refresh** for long-running sessions
 
 ### Claude Code Plugin

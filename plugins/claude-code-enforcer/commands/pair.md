@@ -6,11 +6,17 @@ When the user invokes **/airlock:pair**, run the pairing flow. The user must be 
 
 1. **Check sign-in**: If the user has not signed in yet, tell them to run **/airlock:sign-in** first.
 
-2. **Run**:
+2. **Ask for workspace name** (optional): Ask the user what they'd like to name this workspace. If they provide one, pass it as an argument. Otherwise, the daemon will prompt interactively (defaulting to the folder name).
+
+3. **Run**:
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" pair "workspace-name"
+   ```
+   Or without a custom name (will prompt interactively):
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/daemon/cli.js" pair
    ```
 
-3. **Tell the user**: Enter the 6-character code in the Airlock mobile app.
+4. **Tell the user**: Enter the 6-character code in the Airlock mobile app.
 
-4. **Next step**: The daemon starts automatically after pairing.
+5. **Next step**: The daemon starts automatically after pairing.

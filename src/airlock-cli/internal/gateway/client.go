@@ -55,8 +55,9 @@ func (c *Client) SubmitArtifact(envelope interface{}) error {
 	return nil
 }
 
-// WaitForDecision long-polls GET /v1/exchanges/{requestId}/wait. Returns decision.deliver body or nil if timeout.
-func (c *Client) WaitForDecision(requestID string, timeoutSec int) (map[string]interface{}, error) {
+// WaitForDecision long-polls GET /v1/exchanges/{requestId}/wait.
+// Returns (body, envelopeMsgId, error). Body is nil if no decision yet (204).
+func (c *Client) WaitForDecision(requestID string, timeoutSec int) (map[string]interface{}, string, error) {
 	if timeoutSec <= 0 {
 		timeoutSec = 25
 	}
@@ -66,7 +67,7 @@ func (c *Client) WaitForDecision(requestID string, timeoutSec int) (map[string]i
 	url := fmt.Sprintf("%s/v1/exchanges/%s/wait?timeout=%d", c.BaseURL, requestID, timeoutSec)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
@@ -76,27 +77,62 @@ func (c *Client) WaitForDecision(requestID string, timeoutSec int) (map[string]i
 	client := &http.Client{Timeout: time.Duration(timeoutSec+10) * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("wait request: %w", err)
+		return nil, "", fmt.Errorf("wait request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNoContent {
-		return nil, nil // no decision yet
+		return nil, "", nil // no decision yet
 	}
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("wait failed: %d %s", resp.StatusCode, string(b))
+		return nil, "", fmt.Errorf("wait failed: %d %s", resp.StatusCode, string(b))
 	}
 
 	var env struct {
+		MsgID   string                 `json:"msgId"`
 		MsgType string                 `json:"msgType"`
 		Body    map[string]interface{} `json:"body"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if env.MsgType != "decision.deliver" {
-		return nil, fmt.Errorf("unexpected msgType: %s", env.MsgType)
+		return nil, "", fmt.Errorf("unexpected msgType: %s", env.MsgType)
 	}
-	return env.Body, nil
+	return env.Body, env.MsgID, nil
+}
+
+// SubmitAck POSTs ack.submit envelope (fire-and-forget). Errors are non-fatal.
+func (c *Client) SubmitAck(decisionMsgID, exchangeRequestID string) error {
+	envelope := map[string]interface{}{
+		"msgId":     fmt.Sprintf("ack-%d", time.Now().UnixNano()),
+		"msgType":   "ack.submit",
+		"requestId": exchangeRequestID,
+		"createdAt": time.Now().UTC().Format(time.RFC3339),
+		"sender":    map[string]interface{}{},
+		"body": map[string]interface{}{
+			"msgId":  decisionMsgID,
+			"status": "delivered",
+			"ackAt":  time.Now().UTC().Format(time.RFC3339),
+		},
+	}
+	data, err := json.Marshal(envelope)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodPost, c.BaseURL+"/v1/acks", bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
 }

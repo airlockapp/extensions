@@ -58,6 +58,16 @@ function getOrCreateEnforcerId(context: vscode.ExtensionContext): string {
     return generated;
 }
 
+/**
+ * Get the user-chosen workspace name, falling back to the workspace folder name.
+ * Reads from workspaceState ("airlock.workspaceName") first, then folder name.
+ */
+function getWorkspaceName(context: vscode.ExtensionContext): string {
+    return context.workspaceState.get<string>("airlock.workspaceName")
+        || vscode.workspace.workspaceFolders?.[0]?.name
+        || "unknown";
+}
+
 export function activate(context: vscode.ExtensionContext) {
     const out = vscode.window.createOutputChannel("Airlock Copilot");
     const enforcerId = getOrCreateEnforcerId(context);
@@ -81,7 +91,7 @@ export function activate(context: vscode.ExtensionContext) {
                     presenceClient.disconnect();
                     const token = getRoutingToken(context);
                     if (token) {
-                        presenceClient.connect(endpoint.url, async () => deviceAuth?.ensureFreshToken(), enforcerId);
+                        presenceClient.connect(endpoint.url, async () => deviceAuth?.ensureFreshToken(), enforcerId, getWorkspaceName(context));
                     }
                 }
             }
@@ -344,7 +354,7 @@ export function activate(context: vscode.ExtensionContext) {
                             checkAndUpdateQuota(signInStatusBarItem, out);
                             if (presenceClient && endpoint) {
                                 presenceClient.disconnect();
-                                presenceClient.connect(endpoint.url, async () => deviceAuth?.ensureFreshToken(), enforcerId);
+                                presenceClient.connect(endpoint.url, async () => deviceAuth?.ensureFreshToken(), enforcerId, getWorkspaceName(context));
                             }
                         } else {
                             updateSignInStatusBar(signInStatusBarItem, { status: "not-signed-in" });
@@ -371,7 +381,7 @@ export function activate(context: vscode.ExtensionContext) {
 
             const routingToken = getRoutingToken(context);
             if (routingToken && restored) {
-                presenceClient.connect(endpoint.url, async () => deviceAuth?.ensureFreshToken(), enforcerId);
+                presenceClient.connect(endpoint.url, async () => deviceAuth?.ensureFreshToken(), enforcerId, getWorkspaceName(context));
                 out.appendLine(`[Airlock Presence] Connecting (paired, token=${routingToken.substring(0, 8)}...)`);
             } else {
                 out.appendLine(`[Airlock Presence] Not connecting — not yet paired`);
@@ -435,7 +445,7 @@ export function activate(context: vscode.ExtensionContext) {
                 }
             });
         }
-        presenceClient.connect(endpoint.url, async () => deviceAuth?.ensureFreshToken(), enforcerId);
+        presenceClient.connect(endpoint.url, async () => deviceAuth?.ensureFreshToken(), enforcerId, getWorkspaceName(context));
         out.appendLine(`[Airlock Presence] Connecting to ${endpoint.url}`);
     };
 
@@ -601,8 +611,18 @@ export function activate(context: vscode.ExtensionContext) {
                 const x25519KeyPair = generateX25519KeyPair();
                 const encryptionKey = generateEncryptionKey();
 
+                // Prompt for custom workspace name (pre-filled with current)
+                const defaultName = getWorkspaceName(context);
+                const customName = await vscode.window.showInputBox({
+                    title: "Airlock Workspace Name",
+                    prompt: "Enter a familiar name for this workspace",
+                    value: defaultName,
+                });
+                if (customName === undefined) { return; } // User cancelled
+                const workspaceName = customName.trim() || defaultName;
+                await context.workspaceState.update("airlock.workspaceName", workspaceName);
+
                 const enforcerLabel = "Copilot";
-                const workspaceName = vscode.workspace.name ?? vscode.workspace.workspaceFolders?.[0]?.name ?? "unknown";
 
                 // Use current token; if 401, refresh and retry once
                 let token = deviceAuth?.token;
@@ -691,6 +711,63 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
+    // ── Command: Rename Workspace ──────────────────────────────
+    context.subscriptions.push(
+        vscode.commands.registerCommand("airlock.renameWorkspace", async () => {
+            const current = getWorkspaceName(context);
+            const newName = await vscode.window.showInputBox({
+                title: "Airlock: Rename Workspace",
+                prompt: "Enter a new name for this workspace",
+                value: current,
+            });
+            if (newName === undefined || !newName.trim()) { return; }
+
+            // Require pairing — rename without server persistence is misleading
+            const url = endpoint?.url;
+            const routingToken = getRoutingToken(context);
+            if (!url || !routingToken) {
+                vscode.window.showWarningMessage("Airlock: Not paired. Pair first before renaming.");
+                return;
+            }
+
+            // Call REST endpoint first — abort if it fails
+            try {
+                const headers: Record<string, string> = { "Content-Type": "application/json" };
+                if (deviceAuth?.token) { headers["Authorization"] = `Bearer ${deviceAuth.token}`; }
+                const resp = await fetch(`${url}/v1/pairing/rename`, {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify({ routingToken, workspaceName: newName.trim() }),
+                });
+                if (!resp.ok) {
+                    const body = await resp.text().catch(() => "");
+                    throw new Error(`HTTP ${resp.status}: ${body.slice(0, 200)}`);
+                }
+            } catch (e: unknown) {
+                const msg = e instanceof Error ? e.message : String(e);
+                if (msg.includes("404") || msg.includes("403") || msg.includes("pairing_revoked")) {
+                    out.appendLine("[Airlock] Rename failed: The pairing session is no longer active. Clearing local state.");
+                    await clearRoutingToken(context);
+                    updatePairingStatusBar(context);
+                    vscode.window.showWarningMessage("Airlock: Rename failed. The pairing session is no longer active. Please re-pair.");
+                    return;
+                }
+                out.appendLine(`[Airlock] Rename failed: ${msg}`);
+                vscode.window.showErrorMessage(`Airlock: Rename failed — ${msg}`);
+                return;
+            }
+
+            // Server accepted — update local state
+            await context.workspaceState.update("airlock.workspaceName", newName.trim());
+            out.appendLine(`[Airlock] Workspace renamed to: ${newName.trim()}`);
+            // Also notify via WebSocket for immediate presence update
+            if (presenceClient) {
+                presenceClient.updateWorkspaceName(newName.trim());
+            }
+            vscode.window.showInformationMessage(`Airlock: Workspace renamed to "${newName.trim()}"`);
+        })
+    );
+
     // ── Command: Unpair ────────────────────────────────────────
     context.subscriptions.push(
         vscode.commands.registerCommand("airlock.unpair", async () => {
@@ -708,6 +785,8 @@ export function activate(context: vscode.ExtensionContext) {
 
             if (confirm !== "Unpair") { return; }
 
+            let serverRevoked = false;
+
             // Notify gateway to revoke the pairing record (best-effort)
             if (endpoint?.url) {
                 try {
@@ -718,7 +797,11 @@ export function activate(context: vscode.ExtensionContext) {
                         headers,
                         body: JSON.stringify({ routingToken }),
                     });
+                    const body = await resp.text().catch(() => "");
                     out.appendLine(`[Airlock] Gateway revoke: ${resp.status}`);
+                    if (body.includes("already_revoked") || resp.status === 404) {
+                        serverRevoked = true;
+                    }
                 } catch (e) {
                     out.appendLine(`[Airlock] Gateway revoke failed (non-fatal): ${e}`);
                 }
@@ -738,8 +821,13 @@ export function activate(context: vscode.ExtensionContext) {
                 try { await ctx.strategy?.reinstallHooks(); } catch { /* non-fatal */ }
             }
 
-            out.appendLine("[Airlock] Unpaired successfully.");
-            vscode.window.showInformationMessage("Airlock: Unpaired successfully.");
+            if (serverRevoked) {
+                out.appendLine("[Airlock] Local pairing cleared (was already removed on server).");
+                vscode.window.showInformationMessage("Airlock: Local pairing cleared (was already removed on server).");
+            } else {
+                out.appendLine("[Airlock] Unpaired successfully.");
+                vscode.window.showInformationMessage("Airlock: Unpaired successfully.");
+            }
         })
     );
 
@@ -764,7 +852,7 @@ export function activate(context: vscode.ExtensionContext) {
 
                 if (presenceClient && endpoint) {
                     presenceClient.disconnect();
-                    presenceClient.connect(endpoint.url, async () => deviceAuth?.ensureFreshToken(), enforcerId);
+                    presenceClient.connect(endpoint.url, async () => deviceAuth?.ensureFreshToken(), enforcerId, getWorkspaceName(context));
                 }
             }
         })

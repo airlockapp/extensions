@@ -21,6 +21,7 @@ export class PresenceClient {
     private readonly maxReconnectDelay = 30000; // Max 30s
     private disposed = false;
     private _isConnected = false;
+    private _workspaceName: string = "unknown";
 
     private readonly emitter = new vscode.EventEmitter<PresenceEvent>();
     public readonly onEvent = this.emitter.event;
@@ -42,7 +43,10 @@ export class PresenceClient {
      * Connect to the Gateway WebSocket endpoint for presence.
      * Uses Bearer token for authentication instead of client credentials.
      */
-    connect(gatewayUrl: string, tokenGetter: () => string | undefined, enforcerDeviceId: string): void {
+    connect(gatewayUrl: string, tokenGetter: () => string | undefined, enforcerDeviceId: string, workspaceName?: string): void {
+        if (workspaceName) {
+            this._workspaceName = workspaceName;
+        }
         if (this.ws) {
             this.disconnect();
         }
@@ -136,16 +140,15 @@ export class PresenceClient {
         });
     }
 
-    /**
-     * Send capabilities hello message on connect, including workspace info.
-     */
+    updateWorkspaceName(name: string): void {
+        this._workspaceName = name;
+        this.out.appendLine(`[Airlock Presence] Workspace name updated locally to: ${name}`);
+    }
+
     private sendHello(): void {
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
             return;
         }
-
-        const ws = vscode.workspace.workspaceFolders?.[0];
-        const workspaceName = ws?.name || "unknown";
 
         const hello = JSON.stringify({
             msgType: "hello",
@@ -154,12 +157,12 @@ export class PresenceClient {
                 enforcerVersion: this.enforcerVersion,
                 supportsRefresh: "true",
             },
-            workspaceName,
+            workspaceName: this._workspaceName,
             enforcerLabel: this.enforcerLabel,
         });
 
         this.ws.send(hello);
-        this.out.appendLine(`[Airlock Presence] Sent capabilities hello (workspace=${workspaceName})`);
+        this.out.appendLine(`[Airlock Presence] Sent capabilities hello (workspace=${this._workspaceName})`);
     }
 
     /**

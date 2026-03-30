@@ -325,11 +325,25 @@ async function requestApproval(opts, log) {
 
   if (submitResult.status === 403) {
     const errCode = parseErrorCode(submitResult.body);
+    if (errCode === "pairing_revoked") {
+      config.clearPairingAsync(wsHash).catch(() => {});
+    }
     return {
       permission: "deny",
       message: `Access denied: ${errCode || "pairing revoked"}`,
       agentMessage: "Pairing may be revoked. Run 'pair' again.",
     };
+  }
+  if (submitResult.status === 422) {
+    const errCode = parseErrorCode(submitResult.body);
+    if (errCode === "no_approver") {
+      config.clearPairingAsync(wsHash).catch(() => {});
+      return {
+        permission: "deny",
+        message: "No approver available",
+        agentMessage: "No approver found. The pairing might be stale. Run 'pair' again.",
+      };
+    }
   }
   if (submitResult.status === 429) {
     return {

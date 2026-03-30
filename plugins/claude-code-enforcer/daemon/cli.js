@@ -105,6 +105,15 @@ function ensureAirlockDotfile(wsPath, wsHash) {
     if (!fs.existsSync(dotfilePath)) {
       fs.writeFileSync(dotfilePath, JSON.stringify({ workspaceId: wsHash }, null, 2), "utf8");
       log("Created .airlock workspace identity file.");
+    } else {
+      // Ensure the workspaceId is present (preserve other fields like workspaceName)
+      try {
+        const existing = JSON.parse(fs.readFileSync(dotfilePath, "utf8"));
+        if (!existing.workspaceId) {
+          existing.workspaceId = wsHash;
+          fs.writeFileSync(dotfilePath, JSON.stringify(existing, null, 2), "utf8");
+        }
+      } catch { /* parse error, leave as-is */ }
     }
     
     // Automatically ignore the dotfile in git (create .gitignore if missing)
@@ -145,7 +154,30 @@ async function cmdPair() {
   // to permanently identify this workspace before the blocking gateway pair.
   ensureAirlockDotfile(wsPath, wsHash);
 
-  const workspaceName = path.basename(wsPath);
+  // Resolve workspace name: CLI arg > dotfile > interactive prompt > folder basename
+  const cliArg = process.argv[3];
+  let workspaceName;
+  if (cliArg && cliArg.trim()) {
+    workspaceName = cliArg.trim();
+  } else {
+    // Check if a name was previously set in the dotfile
+    const savedName = config.getWorkspaceNameFromDotfile(wsPath);
+    const defaultName = savedName || path.basename(wsPath);
+    // Interactive prompt — read from stdin
+    workspaceName = await new Promise((resolve) => {
+      const readline = require("readline");
+      const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+      rl.question(`Workspace name [${defaultName}]: `, (answer) => {
+        rl.close();
+        resolve(answer.trim() || defaultName);
+      });
+    });
+  }
+
+  // Persist the name in the .airlock dotfile
+  config.setWorkspaceNameInDotfile(wsPath, workspaceName);
+  log(`Workspace name: ${workspaceName}`);
+
   await pairing.pair(url, token, log, workspaceName, wsPath);
 
   // Store workspace path in state for display
@@ -184,13 +216,22 @@ async function cmdUnpair() {
   const gatewayUrl = (creds && creds.gatewayUrl && creds.gatewayUrl.trim())
     ? creds.gatewayUrl.trim().replace(/\/$/, "")
     : await getGatewayUrl();
+  let serverRevoked = false;
   if (gatewayUrl) {
     const token = await auth.ensureFreshToken();
     try {
-      await auth.postJson(gatewayUrl, "/v1/pairing/revoke", { routingToken }, token);
-      log("Gateway revoke: OK");
+      const resp = await auth.postJson(gatewayUrl, "/v1/pairing/revoke", { routingToken }, token);
+      if (resp && resp.status === "already_revoked") {
+        serverRevoked = true;
+      } else {
+        log("Gateway revoke: OK");
+      }
     } catch (e) {
-      log("Gateway revoke failed (non-fatal): " + (e.message || e));
+      if (e.message && (e.message.includes("404") || e.message.includes("already_revoked"))) {
+        serverRevoked = true;
+      } else {
+        log("Gateway revoke failed (non-fatal): " + (e.message || e));
+      }
     }
   }
   await config.clearPairingAsync(wsHash);
@@ -207,7 +248,43 @@ async function cmdUnpair() {
   }
 
   await stopDaemon(wsHash, log);
-  log("Unpaired. Routing token and encryption key cleared.");
+  if (serverRevoked) {
+    log("Local pairing cleared (was already removed on server).");
+  } else {
+    log("Unpaired. Routing token and encryption key cleared.");
+  }
+}
+
+async function cmdRename(newName) {
+  if (!newName || !newName.trim()) {
+    console.log("Usage: rename <new_name>");
+    console.log("  Renames the workspace on the gateway and locally.");
+    return;
+  }
+  const { wsPath, wsHash } = resolveWorkspace();
+  const routingToken = config.getRoutingToken(wsHash);
+  if (!routingToken) {
+    log("Not paired. Pair first before renaming.");
+    return;
+  }
+  const gatewayUrl = await getGatewayUrl();
+  if (gatewayUrl) {
+    const token = await auth.ensureFreshToken();
+    try {
+      await auth.postJson(gatewayUrl, "/v1/pairing/rename", { routingToken, workspaceName: newName.trim() }, token);
+      log("Gateway rename: OK");
+    } catch (e) {
+      if (e.message && (e.message.includes("404") || e.message.includes("403") || e.message.includes("pairing_revoked"))) {
+        log("Gateway rename failed: The pairing session is no longer active.");
+        await config.clearPairingAsync(wsHash);
+        return;
+      }
+      log("Gateway rename failed: " + (e.message || e));
+      return;
+    }
+  }
+  config.setWorkspaceNameInDotfile(wsPath, newName.trim());
+  log(`Workspace renamed to: ${newName.trim()}`);
 }
 
 // ── Status ────────────────────────────────────────────────
@@ -241,6 +318,8 @@ async function cmdStatus() {
     }
   }
   console.log("Workspace:", wsPath);
+  const customName = config.getWorkspaceNameFromDotfile(wsPath);
+  console.log("Workspace name:", customName || path.basename(wsPath));
   console.log("Paired:", config.getRoutingToken(wsHash) ? "yes" : "no");
   console.log("Fail mode:", config.getFailMode(wsHash));
   console.log("Auto mode:", config.readAutoMode(wsHash) ? "on (enforcement active)" : "off (disabled)");
@@ -396,7 +475,7 @@ async function cmdRun() {
     // interceptions count for inactivity timeout, so daemon shuts down if
     // Claude Code is gone even while heartbeats succeed.
     const tokenGetter = async () => auth.ensureFreshToken();
-    const workspaceName = path.basename(wsPath);
+    const workspaceName = config.getWorkspaceNameFromDotfile(wsPath) || path.basename(wsPath);
     await presenceClient.connect(creds.gatewayUrl, tokenGetter, pairing.getEnforcerId(wsPath), workspaceName);
   } catch (e) {
     log(`Presence client not available: ${e.message || e}`);
@@ -433,8 +512,9 @@ Commands:
   sign-out              Sign out; clear stored credentials.
   dev-mode [URL]        Use dev gateway (default https://localhost:7145). Allows self-signed certs.
   prod-mode             Use prod gateway (default https://gw.airlocks.io). Strict TLS.
-  pair                  Pair with mobile app (requires sign-in). Saves routing token and encryption key.
+  pair [name]            Pair with mobile app (requires sign-in). Optionally specify a workspace name.
   unpair                Unpair from mobile approver; clear routing token and encryption key.
+  rename <name>         Rename the workspace on the gateway and locally.
   run                   Start the pipe server for the current workspace (or AIRLOCK_WORKSPACE).
   auto-on               Enable enforcement (default). Tool use is gated through gateway.
   auto-off              Disable enforcement. All tool use is allowed without gateway.
@@ -489,6 +569,9 @@ async function main() {
       break;
     case "unpair":
       await cmdUnpair();
+      break;
+    case "rename":
+      await cmdRename(process.argv.slice(3).join(" "));
       break;
     case "status":
       await cmdStatus();

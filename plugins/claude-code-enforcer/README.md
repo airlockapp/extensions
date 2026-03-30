@@ -162,7 +162,7 @@ claude-code-enforcer/
 │   ├── airlock-bootstrap.js # Transport-only; stdin → pipe → stdout
 │   └── airlock-session.js   # SessionStart/SessionEnd: spawn or stop daemon
 ├── daemon/                  # Standalone pipe server + auth + gateway
-│   ├── cli.js               # login | pair | unpair | run | status | sign-out
+│   ├── cli.js               # login | pair | unpair | rename | run | status | sign-out
 │   ├── endpointResolver.js  # Gateway URL resolution (dev/prod, same as Cursor)
 │   ├── config.js            # Config dir, credentials, per-workspace state, auto-approve patterns
 │   ├── auth.js              # Device flow, refresh
@@ -187,6 +187,7 @@ claude-code-enforcer/
 | `sign-out` | Sign out; clear credentials and stop daemon. |
 | `pair`   | Pair with mobile app (requires sign-in); saves routing token and encryption key; starts daemon. |
 | `unpair` | Unpair from mobile app; revoke on gateway, clear pairing state, stop daemon. |
+| `rename <name>` | Rename the workspace (updates `.airlock` dotfile and gateway pairing session). |
 | `run`    | Start the pipe server for the current workspace (or `AIRLOCK_WORKSPACE`). |
 | `status` | Show sign-in, pairing, mode, fail mode, and auto-approve patterns. |
 | `fail-mode <open\|closed>` | Set fail mode: `open` allows when daemon unavailable, `closed` blocks (default). |
