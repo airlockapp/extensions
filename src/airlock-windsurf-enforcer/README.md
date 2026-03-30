@@ -2,6 +2,8 @@
 
 [View Source on GitHub](https://github.com/airlockapp/extensions/tree/main/src/airlock-windsurf-enforcer)
 
+**Airlock Approver** (mobile app): [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
+
 **Human-in-the-loop control for Windsurf Cascade AI agents.** Every terminal command and MCP tool call made by the Cascade agent requires an explicit allow or deny decision from your paired Airlock mobile approver before it executes.
 
 > ⚠️ **Required Windsurf Setting:** Set Windsurf's terminal auto-execution mode to **"Auto Mode"** (recommended) for full approve/reject control. Turbo Mode fires the hook but does not enforce rejections. See [Required Windsurf Run Mode](#required-windsurf-run-mode) below.

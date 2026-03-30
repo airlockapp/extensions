@@ -2,6 +2,8 @@
 
 **Airlock CLI enforcer** — a non–hook-based enforcer that gates shell commands through the Airlock gateway. Sign in and pair once; then use `airlock-cli approve` to request human approval before running sensitive commands (e.g. `git push`, production deploys).
 
+**Airlock Approver** (mobile app): [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
+
 ---
 
 ## Table of contents

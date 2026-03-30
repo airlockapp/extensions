@@ -2,6 +2,8 @@
 
 Opt-in PowerShell integration that intercepts **Enter** in an interactive session, calls `airlock-cli approve` with the current command, and only accepts the line (executes the command) when the CLI exits with code `0` (approved).
 
+**Airlock Approver** (mobile app): [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
+
 ## Requirements
 
 - **PowerShell 5+** or **PowerShell Core** (pwsh)

@@ -2,6 +2,8 @@
 
 [View Source on GitHub](https://github.com/airlockapp/extensions/tree/main/src/airlock-antigravity-enforcer)
 
+**Airlock Approver** (mobile app): [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
+
 **Human-in-the-loop control for Antigravity AI agents.** Every agent step requires an explicit allow or deny decision from your paired Airlock mobile approver before it executes.
 
 ---

@@ -1,5 +1,7 @@
 # Airlock Antigravity Enforcer — Developer Reference
 
+**Airlock Approver** (mobile app): [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
+
 > **Engine requirement:** `^1.107.0` — matches Antigravity's current VS Code engine version.
 
 ## Architecture

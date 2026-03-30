@@ -2,6 +2,8 @@
 
 [View Source on GitHub](https://github.com/airlockapp/extensions/tree/main/src/airlock-copilot-enforcer)
 
+**Airlock Approver** (mobile app): [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
+
 **Human-in-the-loop control for GitHub Copilot agents.** Every tool call made by the Copilot agent (bash, file edits, MCP calls, etc.) requires an explicit allow or deny decision from your paired Airlock mobile approver before it executes.
 
 > ⚠️ **Preview Feature:** GitHub Copilot agent hooks (`preToolUse`) are currently in preview. You need **VS Code 1.99 or later** and **GitHub Copilot Chat extension**. Ensure you are on the latest VS Code and Copilot Chat releases.

@@ -1,5 +1,7 @@
 # Airlock Zsh Interceptor — AI-Friendly Implementation Plan
 
+**Airlock Approver** (mobile app): [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
+
 ## Purpose
 
 Implement an opt-in `zsh` interceptor that captures an interactive command before execution, calls `airlock-cli approve`, and only lets the command proceed when the CLI exits with code `0`.

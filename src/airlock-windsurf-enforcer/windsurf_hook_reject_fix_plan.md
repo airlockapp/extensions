@@ -1,5 +1,7 @@
 # Windsurf Hook Reject Issue — AI-Friendly Analysis and Fix Plan
 
+**Airlock Approver** (mobile app): [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
+
 ## Problem Summary
 
 The hook script is clearly receiving a **reject** decision from the gateway, and the log shows the process is exiting with code `2`. However, Windsurf still runs the command.

@@ -2,6 +2,8 @@
 
 This directory contains standalone plugins and integrations that act as Host Enforcers for various AI tools and companions.
 
+**Airlock Approver** (mobile app): [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
+
 Unlike the default IDE extensions (which are located in `src/extensions/src` and packaged as `.vsix` files for VS Code-compatible editors), these plugins are designed for different environments or CLI-based AI companions.
 
 ## Available Plugins

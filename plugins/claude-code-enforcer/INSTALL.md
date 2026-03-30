@@ -4,6 +4,8 @@
 
 This guide walks you through installing and configuring the Airlock Claude Code plugin so that tool use (shell commands, file edits, etc.) is gated through the Airlock gateway and your mobile approval.
 
+**Airlock Approver** (mobile app): [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
+
 ---
 
 ## Prerequisites
@@ -12,7 +14,7 @@ This guide walks you through installing and configuring the Airlock Claude Code 
 - **Node.js** — Version 18 or later (used to run the plugin's daemon and scripts).  
   Check with: `node --version`
 - **Airlock Gateway** — You need access to an Airlock gateway (e.g. your organization's or the default `https://gw.airlocks.io`).
-- **Airlock mobile app** — For approving or denying actions and for pairing.
+- **Airlock Approver** — For approving or denying actions and for pairing ([App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865), [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)).
 
 ---
 

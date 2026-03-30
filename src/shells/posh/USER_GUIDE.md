@@ -1,5 +1,7 @@
 # Airlock PowerShell profile — User guide
 
+**Airlock Approver** (mobile app): [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
+
 This guide walks you through installing and using the Airlock PowerShell integration so that **every command you type** in PowerShell can require approval on your phone before it runs.
 
 ---
@@ -9,7 +11,7 @@ This guide walks you through installing and using the Airlock PowerShell integra
 When the profile is loaded and you press **Enter** on a command:
 
 1. The command is sent to **Airlock** (via `airlock-cli`).
-2. A notification appears on your **Airlock mobile app**.
+2. A notification appears on **Airlock Approver** ([App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865), [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)).
 3. You tap **Approve** or **Reject**.
 4. If you approve, the command runs in PowerShell. If you reject (or don’t respond in time), it does not run.
 
@@ -23,7 +25,7 @@ You need:
 
 1. **airlock-cli** — Installed for Windows (e.g. `airlock-cli.exe`) and on your `PATH` or in a known folder.
 2. **Signed in** — Run `airlock-cli sign-in` once and complete the browser login.
-3. **Paired** — Run `airlock-cli pair` once and enter the code in the Airlock mobile app.
+3. **Paired** — Run `airlock-cli pair` once and enter the code in Airlock Approver.
 4. **PowerShell** — You’re using PowerShell 5 or PowerShell Core (pwsh) on Windows. PSReadLine should be available (it usually is by default).
 
 ---

@@ -2,6 +2,8 @@
 
 [View Source on GitHub](https://github.com/airlockapp/extensions/tree/main/plugins/claude-code-enforcer)
 
+**Airlock Approver** (mobile app): [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
+
 Claude Code plugin that gates tool use (Bash, Edit, Write, Read, etc.) through the **Airlock** security gateway for human-in-the-loop approval (e.g. mobile app).
 
 **The plugin works by itself.** It includes a **standalone daemon** for sign-in, pairing, token refresh, presence tracking, and gateway communication. You do not need Cursor or any other IDE.

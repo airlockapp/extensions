@@ -4,6 +4,8 @@ IDE enforcer extensions and CLI for **Airlock** — the cryptographically enforc
 
 These extensions intercept AI agent actions before execution and route them through a mobile approval flow, ensuring no sensitive or high-impact action runs without an explicitly signed human decision.
 
+**Airlock Approver** (mobile app): [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
+
 ---
 
 ## HARP (Human Authorization & Review Protocol)
@@ -112,14 +114,14 @@ VSIX packages are placed in:
 
 | Mode     | Output Directory | Naming                              |
 | -------- | ---------------- | ----------------------------------- |
-| **dev**  | `extensions_dist/dev/`      | `airlock-*-enforcer-dev-0.4.1.vsix` |
-| **prod** | `extensions_dist/prod/`     | `airlock-*-enforcer-0.4.1.vsix`     |
+| **dev**  | `extensions_dist/dev/`      | `airlock-*-enforcer-dev-1.0.1.vsix` |
+| **prod** | `extensions_dist/prod/`     | `airlock-*-enforcer-1.0.1.vsix`     |
 
 ### Install a Built Extension
 
 ```bash
 # VS Code / Cursor / Windsurf
-code --install-extension extensions_dist/prod/airlock-cursor-enforcer-0.4.1.vsix
+code --install-extension extensions_dist/prod/airlock-cursor-enforcer-1.0.1.vsix
 ```
 
 Or: **Extensions** → **⋯** → **Install from VSIX…** → select the `.vsix` file.
@@ -144,6 +146,7 @@ See the `DEVELOPMENT.md` file in each extension folder for extension-specific no
 
 ## Related
 
+- **Airlock Approver** (mobile app) — [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
 - **[HARP Protocol](https://harp-protocol.github.io/)** — Human Authorization & Review Protocol (underlying spec); draft suite and samples live in [samples/harp/](samples/harp/)
 
 ---

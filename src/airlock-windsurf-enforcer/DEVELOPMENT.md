@@ -1,5 +1,7 @@
 # Airlock Windsurf Enforcer — Developer Reference
 
+**Airlock Approver** (mobile app): [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
+
 > **Engine requirement:** `^1.85.0` — compatible with Windsurf and standard VS Code.
 
 ## Architecture

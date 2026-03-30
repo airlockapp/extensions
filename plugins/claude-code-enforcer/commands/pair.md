@@ -1,5 +1,7 @@
 # Airlock: Pair with mobile app
 
+**Airlock Approver:** [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
+
 When the user invokes **/airlock:pair**, run the pairing flow. The user must be signed in first.
 
 ## What to do

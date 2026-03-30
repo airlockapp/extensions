@@ -1,6 +1,8 @@
 
 # Airlock Cursor Enforcer Security Hardening — v3 (Standards‑Grade Implementation Plan)
 
+**Airlock Approver** (mobile app): [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
+
 This document is the **standards‑grade implementation specification** for securing the
 `airlock-cursor-enforcer` extension.
 

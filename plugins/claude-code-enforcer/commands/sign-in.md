@@ -1,5 +1,7 @@
 # Airlock: Sign In
 
+**Airlock Approver** (mobile app): [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
+
 Run this when the user invokes **/airlock:sign-in**, asks to sign in to Airlock, or when tool use is blocked with "not signed in" or "runtime unavailable".
 
 ## What to do

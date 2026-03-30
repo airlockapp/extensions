@@ -2,6 +2,8 @@
 # Airlock Cursor Enforcer Security Hardening — v3.1 Addendum
 IPC Authentication, Pipe Security, Collision Handling, and Bootstrap Timeouts
 
+**Airlock Approver** (mobile app): [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
+
 This document is an addendum to the **Airlock Cursor Enforcer Security Hardening v3 specification**.
 It fills the remaining security gaps identified during final review.
 

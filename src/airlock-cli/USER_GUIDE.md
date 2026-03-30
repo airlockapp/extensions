@@ -8,7 +8,7 @@ This guide helps you install, set up, and use the **Airlock CLI** so you can req
 
 The Airlock CLI is a small program that:
 
-1. **Asks for approval** — Before a command runs, it sends a request to the Airlock gateway. You see the request on the **Airlock mobile app** and tap **Approve** or **Deny**.
+1. **Asks for approval** — Before a command runs, it sends a request to the Airlock gateway. You see the request on the **Airlock Approver** mobile app ([App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865), [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)) and tap **Approve** or **Deny**.
 2. **Blocks until you decide** — The terminal waits until you approve, deny, or until a timeout. It then exits with a clear result so your shell or script can allow or block the command.
 3. **Stays secure** — You sign in once (with your normal account) and pair the CLI with your phone once. After that, approvals are cryptographically verified so only your decision counts.
 
@@ -22,7 +22,7 @@ You need:
 
 - **Airlock gateway** — Your organization or project will give you a URL (e.g. `https://gateway.mycompany.com`). If you’re trying Airlock yourself, use the URL from your dev setup (e.g. `https://localhost:7145`).
 - **An account** — Same account you use for the Airlock web app or IDE extension (Keycloak/SSO).
-- **Airlock mobile app** — Installed on your phone, signed in with that account. Used to approve or deny requests and to **pair** the CLI.
+- **Airlock Approver** — The mobile app ([App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865), [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)), installed on your phone and signed in with that account. Used to approve or deny requests and to **pair** the CLI.
 
 ---
 

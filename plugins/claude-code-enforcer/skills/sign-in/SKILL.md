@@ -1,5 +1,7 @@
 # Airlock sign-in (Claude Code)
 
+**Airlock Approver** (mobile app): [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
+
 Use this skill when the user wants to **sign in to Airlock** for the Claude Code enforcer, or when tool use is blocked with "not signed in", "runtime unavailable", or "Not paired".
 
 ## Sign in and pair via the plugin (no daemon path needed)

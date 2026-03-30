@@ -1,5 +1,7 @@
 # Copilot hooks (VS Code) — spec summary + HARP/Airlock gate script audit
 
+**Airlock Approver** (mobile app): [App Store](https://apps.apple.com/us/app/airlock-approver/id6760250865) · [Google Play](https://play.google.com/store/apps/details?id=com.airlockapp.io)
+
 > **STATUS: All bugs and gaps listed in this document have been implemented as of 2026-03-04.**
 > See [extension-gateway-hardening.md](../../extension-gateway-hardening.md) for the full implementation reference.
 >

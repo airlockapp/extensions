@@ -1,0 +1,29 @@
+{
+  "name": "openclaw-airlock",
+  "version": "1.0.0",
+  "description": "Airlock security gateway plugin for OpenClaw — enforces human-in-the-loop approval for AI tool use",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "openclaw": {
+    "entry": "./dist/index.js",
+    "compatibleWith": ">=0.1.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@airlockapp/gateway-sdk": "^0.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "@types/node": "^22.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "private": true,
+  "license": "MIT"
+}
