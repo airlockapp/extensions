@@ -1,8 +1,8 @@
 {
-    "name": "airlock-antigravity-enforcer",
-    "displayName": "Airlock Antigravity Enforcer",
+    "name": "airlock-enforcer-antigravity",
+    "displayName": "Airlock Enforcer for Antigravity",
     "description": "Airlock enforcement layer for Antigravity — gates agent/terminal commands through mobile approval",
-    "version": "0.4.2",
+    "version": "1.0.0",
     "publisher": "out-of-band-systems",
     "license": "MIT",
     "icon": "images/icon.png",
@@ -76,7 +76,7 @@
             }
         ],
         "configuration": {
-            "title": "Airlock Antigravity Enforcer",
+            "title": "Airlock Enforcer for Antigravity",
             "properties": {
                 "airlock.diagnosticMode": {
                     "type": "boolean",

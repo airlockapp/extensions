@@ -1,8 +1,8 @@
 {
-    "name": "airlock-cursor-enforcer",
-    "displayName": "Airlock Cursor Enforcer",
+    "name": "airlock-enforcer-cursor",
+    "displayName": "Airlock Enforcer for Cursor",
     "description": "Airlock enforcement layer for Cursor IDE — gates agent/terminal commands through mobile approval. Requires 'Run Everything as Agent' run mode in Cursor settings for full enforcement.",
-    "version": "0.4.2",
+    "version": "1.0.0",
     "publisher": "out-of-band-systems",
     "license": "MIT",
     "icon": "images/icon.png",
@@ -72,7 +72,7 @@
             }
         ],
         "configuration": {
-            "title": "Airlock Cursor Enforcer",
+            "title": "Airlock Enforcer for Cursor",
             "properties": {
                 "airlock.diagnosticMode": {
                     "type": "boolean",

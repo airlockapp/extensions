@@ -8,13 +8,14 @@
     TypeScript, packages with vsce (--allow-missing-repository), and copies
     the resulting .vsix file to ../extensions_dist/.
 
+    Package names follow airlock-enforcer-<ide> (e.g., airlock-enforcer-cursor).
     In dev mode, the package name is temporarily suffixed with "-dev" so VSIX
-    files are distinctly named (e.g., airlock-cursor-enforcer-dev-0.1.0.vsix).
+    files are distinctly named (e.g., airlock-enforcer-cursor-dev-1.0.0.vsix).
 
 .PARAMETER Mode
     Build mode: "dev" or "prod" (default: "prod").
     - dev:  Patches package.json name with -dev suffix before packaging, restores after.
-    - prod: Builds as-is with standard naming.
+    - prod: Builds as-is from package.json.
 
 .PARAMETER Name
     Optional. Build only the specified extension.
@@ -122,7 +123,14 @@ foreach ($name in $enforcers) {
         Write-Host "  [3/4] Cleaning old VSIX files..." -ForegroundColor DarkGray
         Get-ChildItem -Path $extDir -Filter "*.vsix" -ErrorAction SilentlyContinue | Remove-Item -Force
         # Also clean old VSIX for this enforcer from the dist folder
-        $cleanName = if ($Mode -eq "dev") { "$name-dev" } else { $name }
+        # VSIX basename: airlock-enforcer-<ide>[-dev]-<version>.vsix
+        if ($name -match '^airlock-(.*)-enforcer$') {
+            $pkgBase = "airlock-enforcer-$($Matches[1])"
+        }
+        else {
+            $pkgBase = $name
+        }
+        $cleanName = if ($Mode -eq "dev") { "$pkgBase-dev" } else { $pkgBase }
         Get-ChildItem -Path $modeDistDir -Filter "$cleanName*.vsix" -ErrorAction SilentlyContinue | Remove-Item -Force
 
         # 4. Package VSIX with all dependencies included

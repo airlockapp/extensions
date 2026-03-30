@@ -59,7 +59,7 @@ function getWorkspaceName(context: vscode.ExtensionContext): string {
 export function activate(context: vscode.ExtensionContext) {
     const out = vscode.window.createOutputChannel("Airlock");
     const enforcerId = getOrCreateEnforcerId(context);
-    out.appendLine(`Airlock Antigravity Enforcer v2 activated. EnforcerId: ${enforcerId}`);
+    out.appendLine(`Airlock Enforcer for Antigravity activated. EnforcerId: ${enforcerId}`);
     out.show(true);
 
     // ── TLS configuration ─────────────────────────────────────

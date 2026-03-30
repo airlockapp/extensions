@@ -71,7 +71,7 @@ function getWorkspaceName(context: vscode.ExtensionContext): string {
 export function activate(context: vscode.ExtensionContext) {
     const out = vscode.window.createOutputChannel("Airlock Copilot");
     const enforcerId = getOrCreateEnforcerId(context);
-    out.appendLine(`Airlock Copilot Enforcer v3 activated. EnforcerId: ${enforcerId}`);
+    out.appendLine(`Airlock Enforcer for Copilot activated. EnforcerId: ${enforcerId}`);
     out.show(true);
 
     // ── TLS configuration ─────────────────────────────────────
@@ -548,7 +548,7 @@ export function activate(context: vscode.ExtensionContext) {
                 : "Not configured";
             const failMode = vscode.workspace.getConfiguration("airlock").get<string>("failMode", "failClosed");
             out.appendLine("\n==============================");
-            out.appendLine("Airlock Status (v3)");
+            out.appendLine("Airlock Status");
             out.appendLine("==============================");
             out.appendLine(`Endpoint: ${epStr}`);
             out.appendLine(`Strategy: ${autoMode.strategyName}`);

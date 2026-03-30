@@ -6,14 +6,14 @@
     Wrapper script that calls build-enforcers.ps1 twice — once for dev and
     once for prod — producing two sets of VSIX packages in extensions_dist/.
 
-    Dev packages have "-dev" appended to the extension name:
-      airlock-cursor-enforcer-dev-0.1.0.vsix
-      airlock-windsurf-enforcer-dev-0.1.0.vsix
+    Dev packages append "-dev" to the package name:
+      airlock-enforcer-cursor-dev-1.0.0.vsix
+      airlock-enforcer-windsurf-dev-1.0.0.vsix
       ...
 
-    Prod packages use standard naming:
-      airlock-cursor-enforcer-0.1.0.vsix
-      airlock-windsurf-enforcer-0.1.0.vsix
+    Prod packages:
+      airlock-enforcer-cursor-1.0.0.vsix
+      airlock-enforcer-windsurf-1.0.0.vsix
       ...
 
 .PARAMETER Mode

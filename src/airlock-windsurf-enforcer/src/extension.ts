@@ -71,7 +71,7 @@ function getWorkspaceName(context: vscode.ExtensionContext): string {
 export function activate(context: vscode.ExtensionContext) {
     const out = vscode.window.createOutputChannel("Airlock Windsurf");
     const enforcerId = getOrCreateEnforcerId(context);
-    out.appendLine(`Airlock Windsurf Enforcer v3 activated. EnforcerId: ${enforcerId}`);
+    out.appendLine(`Airlock Enforcer for Windsurf activated. EnforcerId: ${enforcerId}`);
     out.show(true);
 
     // ── TLS configuration ─────────────────────────────────────
