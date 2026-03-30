@@ -1,6 +1,6 @@
 {
   "name": "openclaw-airlock",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Airlock security gateway plugin for OpenClaw — enforces human-in-the-loop approval for AI tool use",
   "type": "module",
   "main": "dist/index.js",
