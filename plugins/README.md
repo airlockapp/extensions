@@ -10,6 +10,8 @@ Unlike the default IDE extensions (which are located in `src/extensions/src` and
 
 - **[`claude-code-enforcer`](claude-code-enforcer/README.md)**: A security plugin for Anthropic's [Claude Code](https://code.claude.com/). It gates tool use (Bash, Edit, Write, Read, etc.) through the Airlock security gateway for human-in-the-loop approval via the mobile app.
 
+- **[`openclaw-airlock`](openclaw-airlock/README.md)**: A security plugin for [OpenClaw](https://openclaw.ai/)-compatible AI agent runtimes. Enforces human-in-the-loop approval for configurable tool actions via the Airlock gateway. Uses pre-generated pairing codes, X25519 ECDH encryption, and Ed25519 decision signatures.
+
 ## Development
 
 Each plugin in this directory is fully standalone and may have its own build, installation, and publication lifecycle. Please refer to each plugin's respective `README.md` and `INSTALL.md` for specific instructions.
