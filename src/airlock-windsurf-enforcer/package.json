@@ -2,7 +2,7 @@
     "name": "airlock-enforcer-windsurf",
     "displayName": "Airlock Enforcer for Windsurf",
     "description": "Airlock enforcement layer for Windsurf IDE — gates Cascade agent/terminal commands through mobile approval. Requires 'Auto Mode' or 'Turbo Mode' terminal auto-execution setting for full enforcement.",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "publisher": "out-of-band-systems",
     "license": "MIT",
     "icon": "images/icon.png",

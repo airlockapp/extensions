@@ -276,7 +276,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         // ── Named Pipe Proxies (v3 §3-4: per-folder) ────────────
         if (!deviceAuth) {
-            deviceAuth = new DeviceAuth(context.secrets);
+            deviceAuth = new DeviceAuth(context.secrets, getOrCreateEnforcerId(context));
         }
 
         const folders = vscode.workspace.workspaceFolders || [];
@@ -333,7 +333,7 @@ export function activate(context: vscode.ExtensionContext) {
             });
 
             // Restore auth session and connect presence WS.
-            deviceAuth = new DeviceAuth(context.secrets);
+            deviceAuth = new DeviceAuth(context.secrets, getOrCreateEnforcerId(context));
             const restored = await deviceAuth.restoreSession();
             if (vscode.workspace.getConfiguration("airlock").get<boolean>("diagnosticMode", false)) {
                 const tokenInfo = deviceAuth.getTokenInfo();
@@ -416,7 +416,7 @@ export function activate(context: vscode.ExtensionContext) {
     const ensurePresenceConnected = async () => {
         if (!endpoint) { return; }
         if (!deviceAuth) {
-            deviceAuth = new DeviceAuth(context.secrets);
+            deviceAuth = new DeviceAuth(context.secrets, getOrCreateEnforcerId(context));
             await deviceAuth.restoreSession();
         }
         if (!presenceClient) {
@@ -462,7 +462,7 @@ export function activate(context: vscode.ExtensionContext) {
     const requireAuth = async (): Promise<boolean> => {
         if (!deviceAuth) {
             out.appendLine('[Airlock] requireAuth: creating new DeviceAuth');
-            deviceAuth = new DeviceAuth(context.secrets);
+            deviceAuth = new DeviceAuth(context.secrets, getOrCreateEnforcerId(context));
             await deviceAuth.restoreSession();
         }
         if (deviceAuth.isLoggedIn) {
@@ -834,7 +834,7 @@ export function activate(context: vscode.ExtensionContext) {
     // ── Command: Login (Device Authorization) ───────────────────
     context.subscriptions.push(
         vscode.commands.registerCommand("airlock.login", async () => {
-            if (!deviceAuth) { deviceAuth = new DeviceAuth(context.secrets); }
+            if (!deviceAuth) { deviceAuth = new DeviceAuth(context.secrets, getOrCreateEnforcerId(context)); }
             const success = await deviceAuth.login(endpoint?.url);
             if (success) {
                 updateSignInStatusBar(signInStatusBarItem, { status: "signed-in" });

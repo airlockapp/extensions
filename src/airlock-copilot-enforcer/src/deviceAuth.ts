@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
 import { EventEmitter } from 'events';
 
-const SECRET_ACCESS_TOKEN = 'airlock.accessToken';
-const SECRET_REFRESH_TOKEN = 'airlock.refreshToken';
-const SECRET_GATEWAY_URL = 'airlock.gatewayUrl';
+// Legacy flat keys — used only for one-time migration from pre-instance-scoped storage
+const LEGACY_ACCESS_TOKEN = 'airlock.accessToken';
+const LEGACY_REFRESH_TOKEN = 'airlock.refreshToken';
+const LEGACY_GATEWAY_URL = 'airlock.gatewayUrl';
 
 /**
  * OAuth2 Device Authorization flow for Keycloak, proxied through the Gateway.
@@ -16,7 +17,15 @@ export class DeviceAuth {
     private readonly _authEmitter = new EventEmitter();
     private static readonly MAX_REFRESH_RETRIES = 10;
 
-    constructor(private readonly secrets: vscode.SecretStorage) { }
+    private readonly SECRET_ACCESS_TOKEN: string;
+    private readonly SECRET_REFRESH_TOKEN: string;
+    private readonly SECRET_GATEWAY_URL: string;
+
+    constructor(private readonly secrets: vscode.SecretStorage, instanceId: string) {
+        this.SECRET_ACCESS_TOKEN = `airlock.accessToken.${instanceId}`;
+        this.SECRET_REFRESH_TOKEN = `airlock.refreshToken.${instanceId}`;
+        this.SECRET_GATEWAY_URL = `airlock.gatewayUrl.${instanceId}`;
+    }
 
     get token(): string | undefined { return this.accessToken; }
     get gateway(): string | undefined { return this.gatewayUrl; }
@@ -24,9 +33,28 @@ export class DeviceAuth {
 
     /** Restore tokens from SecretStorage. Returns true if a valid session was restored. */
     async restoreSession(): Promise<boolean> {
-        this.accessToken = await this.secrets.get(SECRET_ACCESS_TOKEN);
-        this.refreshToken = await this.secrets.get(SECRET_REFRESH_TOKEN);
-        this.gatewayUrl = await this.secrets.get(SECRET_GATEWAY_URL);
+        this.accessToken = await this.secrets.get(this.SECRET_ACCESS_TOKEN);
+        this.refreshToken = await this.secrets.get(this.SECRET_REFRESH_TOKEN);
+        this.gatewayUrl = await this.secrets.get(this.SECRET_GATEWAY_URL);
+
+        // One-time migration: if no scoped tokens found, check legacy flat keys and migrate them
+        if (!this.accessToken) {
+            const legacyAccess = await this.secrets.get(LEGACY_ACCESS_TOKEN);
+            if (legacyAccess) {
+                const legacyRefresh = await this.secrets.get(LEGACY_REFRESH_TOKEN);
+                const legacyGateway = await this.secrets.get(LEGACY_GATEWAY_URL);
+                this.accessToken = legacyAccess;
+                this.refreshToken = legacyRefresh;
+                this.gatewayUrl = legacyGateway;
+                await this.secrets.store(this.SECRET_ACCESS_TOKEN, legacyAccess);
+                if (legacyRefresh) { await this.secrets.store(this.SECRET_REFRESH_TOKEN, legacyRefresh); }
+                if (legacyGateway) { await this.secrets.store(this.SECRET_GATEWAY_URL, legacyGateway); }
+                await this.secrets.delete(LEGACY_ACCESS_TOKEN);
+                await this.secrets.delete(LEGACY_REFRESH_TOKEN);
+                await this.secrets.delete(LEGACY_GATEWAY_URL);
+            }
+        }
+
         if (!this.accessToken) { return false; }
 
         // If access token is already expired, try to refresh eagerly
@@ -100,9 +128,9 @@ export class DeviceAuth {
                         this.refreshToken = pollResp.refreshToken;
                         this.gatewayUrl = gatewayUrl;
 
-                        await this.secrets.store(SECRET_ACCESS_TOKEN, this.accessToken!);
-                        await this.secrets.store(SECRET_REFRESH_TOKEN, this.refreshToken!);
-                        await this.secrets.store(SECRET_GATEWAY_URL, gatewayUrl);
+                        await this.secrets.store(this.SECRET_ACCESS_TOKEN, this.accessToken!);
+                        await this.secrets.store(this.SECRET_REFRESH_TOKEN, this.refreshToken!);
+                        await this.secrets.store(this.SECRET_GATEWAY_URL, gatewayUrl);
 
                         panel.dispose();
                         vscode.window.showInformationMessage('✅ Airlock: Signed in successfully!');
@@ -142,8 +170,8 @@ export class DeviceAuth {
 
         this.accessToken = resp.accessToken;
         this.refreshToken = resp.refreshToken;
-        await this.secrets.store(SECRET_ACCESS_TOKEN, this.accessToken!);
-        await this.secrets.store(SECRET_REFRESH_TOKEN, this.refreshToken!);
+        await this.secrets.store(this.SECRET_ACCESS_TOKEN, this.accessToken!);
+        await this.secrets.store(this.SECRET_REFRESH_TOKEN, this.refreshToken!);
         return true;
     }
 
@@ -274,9 +302,9 @@ export class DeviceAuth {
         this.accessToken = undefined;
         this.refreshToken = undefined;
         this.gatewayUrl = undefined;
-        await this.secrets.delete(SECRET_ACCESS_TOKEN);
-        await this.secrets.delete(SECRET_REFRESH_TOKEN);
-        await this.secrets.delete(SECRET_GATEWAY_URL);
+        await this.secrets.delete(this.SECRET_ACCESS_TOKEN);
+        await this.secrets.delete(this.SECRET_REFRESH_TOKEN);
+        await this.secrets.delete(this.SECRET_GATEWAY_URL);
     }
 
     // ── Device Auth Panel HTML ──────────────────────────────────────
